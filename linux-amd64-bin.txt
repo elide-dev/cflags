@@ -1,0 +1,8 @@
+# Linux + amd64 — *final-link-only* flags specific to x86_64. Appended
+# after base.txt + linux.txt + linux-amd64.txt + linux-bin.txt at the
+# consuming project's executable / shared-library link step.
+#
+# Currently empty: every final-link flag we apply is ELF-wide and lives
+# in linux-bin.txt. This file exists as a placeholder for any future
+# x86_64-only leaf-link flag (e.g. an ISA-specific linker assertion or
+# AVX-512-vs-VEX prefer/avoid setting that the linker honors).

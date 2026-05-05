@@ -1,0 +1,7 @@
+# macOS + Intel — *final-link-only* flags specific to x86_64. Appended
+# after base.txt + darwin.txt + darwin-amd64.txt + darwin-bin.txt at
+# the consuming project's executable / dylib link step.
+#
+# Currently empty: every final-link flag we apply is Mach-O-wide and
+# lives in darwin-bin.txt. This file exists as a placeholder for any
+# future Intel-Mac-only leaf-link flag.

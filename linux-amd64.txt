@@ -1,4 +1,52 @@
-# Linux + amd64 only — appended after base.txt, linux.txt, and amd64.txt.
+# Linux + amd64 only — appended after base.txt and linux.txt.
+
+# Target ISA baseline: x86-64-v3 (Haswell-class). Implies SSE4.2 + AVX +
+# AVX2 + BMI1 + BMI2 + F16C + FMA + LZCNT + MOVBE + POPCNT + OSXSAVE.
+#
+# Layered cryptographic extensions (matched to our Rust profile, which
+# uses -Ctarget-cpu=x86-64-v3 -Ztune-cpu=znver3 -Ctarget-feature=+aes,+rdrand):
+#
+#   -maes      AES-NI: AESENC/AESDEC/AESKEYGEN — the BoringSSL hot path
+#              for AES-{CBC,CTR,GCM}. Available on Westmere+/Bulldozer+,
+#              so it's effectively universal at the v3 floor anyway.
+#   -mpclmul   PCLMULQDQ: carry-less multiply, the hot instruction for
+#              GHASH (AES-GCM) and CRC32C polynomial work. Same floor.
+#   -msha      SHA-NI: hardware SHA-1/SHA-256 round instructions. Floor
+#              moves to Goldmont/Cannon Lake+ on Intel and Zen 1+ on AMD;
+#              Skylake/Kaby/Coffee/Comet desktop chips do NOT have it.
+#              We accept that floor for the BoringSSL TLS handshake win.
+#   -mvaes     Vector AES (256/512-bit AES rounds across YMM/ZMM lanes).
+#              Floor: Ice Lake server / Tiger Lake / Alder Lake on Intel,
+#              Zen 3+ on AMD.
+#   -mgfni     Galois Field New Instructions (GF(2^8) affine transforms).
+#              Same floor as VAES on Intel; Zen 4+ on AMD.
+#   -mrdrnd    Hardware RNG via RDRAND. Available since Ivy Bridge / Zen 1.
+#
+# Effective deployment floor with this set: Ice Lake server (2019) /
+# Zen 3 (2020) or newer. If a downstream target needs to support
+# Cascade Lake or pre-Zen-3 EPYC, drop -mvaes -mgfni in an override.
+-march=x86-64-v3
+-maes
+-mpclmul
+-msha
+-mvaes
+-mgfni
+-mrdrnd
+
+# Microarch tuning: optimize scheduling/instruction-selection for AMD
+# Zen 3 (Milan / Ryzen 5000). Tuning is purely performance-shaped; the
+# binary still runs on every -march=x86-64-v3 + extensions chip above.
+# Mirrors the Rust profile's -Ztune-cpu=znver3.
+-mtune=znver3
+
+# Intel CET — Indirect Branch Tracking + shadow stack. `=full` enables
+# both -mibt and -mshstk. Cheap on hardware that supports it (Tiger Lake+
+# / Zen 4+); silently transparent on older CPUs because the ENDBR64 prefix
+# decodes as a NOP, and the shadow stack is only consulted when the kernel
+# advertises CET support. Linux 5.18+ wires the userspace bits up via
+# arch_prctl. Pairs with the assembler emitting NT_GNU_PROPERTY_TYPE_0
+# notes so the loader can verify the binary opted in.
+-fcf-protection=full
 
 # Emit per-basic-block sections so the linker can reorder/discard at finer
 # granularity than per-function. clang's `=all` form is gated to x86 ELF;

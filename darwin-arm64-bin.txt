@@ -1,0 +1,7 @@
+# macOS + Apple Silicon — *final-link-only* flags specific to aarch64.
+# Appended after base.txt + darwin.txt + darwin-arm64.txt + darwin-bin.txt
+# at the consuming project's executable / dylib link step.
+#
+# Currently empty: every final-link flag we apply is Mach-O-wide and
+# lives in darwin-bin.txt. This file exists as a placeholder for any
+# future Apple-Silicon-only leaf-link flag.

@@ -1,0 +1,22 @@
+# macOS + Intel only — appended after base.txt and darwin.txt.
+
+# Target ISA baseline: x86-64-v3, matching the linux-amd64 floor. The last
+# Intel Mac models (2019-2020 iMac Pro / Mac Pro / 16" MBP) all expose at
+# least Skylake-X-class ISA, so this is a safe deployment baseline.
+# Apple-Silicon Macs do not consume this file (they take darwin-arm64).
+#
+# Conservative extension layer relative to linux-amd64: Intel Macs cap
+# at Coffee Lake / Comet Lake / Cascade Lake (Mac Pro 2019), none of
+# which have SHA-NI, VAES, or GFNI. AES-NI, PCLMUL, and RDRAND have
+# been shipping since well before the x86-64-v3 floor (Westmere /
+# Ivy Bridge respectively), so they're free additions on every Intel
+# Mac that actually meets the Haswell-class baseline.
+-march=x86-64-v3
+-maes
+-mpclmul
+-mrdrnd
+
+# Intentionally NOT enabling -fcf-protection here: macOS userspace doesn't
+# wire up Intel CET (no IBT/SHSTK runtime, no equivalent of arch_prctl).
+# Emitting the ENDBR64 prologues would just bloat code with no enforcement,
+# and the GNU-property notes the flag generates aren't honored by dyld.

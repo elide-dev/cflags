@@ -1,0 +1,8 @@
+# Linux + arm64 — *final-link-only* flags specific to aarch64. Appended
+# after base.txt + linux.txt + linux-arm64.txt + linux-bin.txt at the
+# consuming project's executable / shared-library link step.
+#
+# Currently empty: every final-link flag we apply is ELF-wide and lives
+# in linux-bin.txt. This file exists as a placeholder for any future
+# aarch64-only leaf-link flag (e.g. tightening BTI / PAC handling beyond
+# what -z force-bti / -z pac-plt already enable in linux-arm64.txt).

@@ -1,0 +1,35 @@
+# Linux — *final-link-only* flags shared by every Linux/$arch-bin profile.
+# Appended after base.txt + linux.txt + linux-$arch.txt at the consuming
+# project's executable / shared-library link step. Anything ELF-wide that
+# would break a dependency build's intermediate conftest or test-binary
+# link goes here. Per-arch final-link flags (currently none) live in the
+# linux-$arch-bin.txt sibling.
+
+# Drop unreferenced sections produced by -ffunction-sections /
+# -fdata-sections (emitted in base.txt). The intermediate per-symbol
+# section granularity is wasted code-size unless somebody runs DCE; this
+# flag is the consumer of those flags. Safe at the final link only —
+# applying it at intermediate dependency-build links strips symbols that
+# a later stage still references.
+-Wl,--gc-sections
+
+# Reject any undefined symbol at link time. For shared libraries this
+# means every external dep must be in DT_NEEDED; for executables, every
+# external symbol must be resolvable. Catches missing libraries early
+# instead of failing at dlopen / runtime. Pairs naturally with `-z now`
+# (already enforced in linux.txt): if we're going to bind eagerly at
+# load anyway, we may as well prove it links cleanly.
+-Wl,-z,defs
+
+# Compress DWARF debug sections with zstd. lld ≥ 18 writes the modern
+# SHF_COMPRESSED form; binutils 2.42+, gdb 14+, and llvm-objdump 18+
+# read it. Substantial size reduction with -g (~40-60% smaller .debug_*),
+# zero runtime cost — debug sections aren't loaded into memory.
+-Wl,--compress-debug-sections=zstd
+
+# Make linker warnings fatal at the final link only. At intermediate
+# dependency-build stages a benign warning (e.g. about a missing
+# __start_/__stop_ alias that gets defined later, or a
+# DT_TEXTREL produced by an incidental .S input) would otherwise abort
+# the build before we got to do anything about it.
+-Wl,--fatal-warnings
