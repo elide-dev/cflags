@@ -8,9 +8,14 @@ Flag files allow comments which start with `#`. Comments are thus inline explain
 
 Compiler features activated or facilitated by these flags:
 
-| Flag(s)      | Feature       | Platforms | Description                                       |
-| ------------ | ------------- | --------- | ------------------------------------------------- |
-| `-flto=thin` | [Thin LTO][9] | All       | Emits and optimizes as LLVM bitcode, program-wide |
+| Feature                  | Platforms   | Description                                       |
+| ------------------------ | ----------- | ------------------------------------------------- |
+| [Thin LTO][9]            | All         | Emits and optimizes as LLVM bitcode, program-wide |
+| Function/Data Sections   | All         | `-f{data,function}-sections` for link-time DCE    |
+| Stack Hardening          | All         | E.g. `-fstack-protector-strong`                   |
+| [LLD][10] as linker      | All         | `-fuse-ld=lld` required for Thin LTO              |
+| Relative C++ ABI vtables | Linux       | Enables relative vtable references program-wide   |
+| Linker-driven Reordering | Linux amd64 | Emits `-fbasic-block-sections=all` for reordering |
 
 ## Flag Profiles
 
@@ -46,3 +51,4 @@ So far, the following projects consume these flags:
 [7]: https://github.com/elide-dev/netty
 [8]: https://github.com/elide-dev/netty-tcnative
 [9]: https://clang.llvm.org/docs/ThinLTO.html
+[10]: https://lld.llvm.org/
