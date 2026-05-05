@@ -1,5 +1,23 @@
 # Linux + amd64 only — appended after base.txt, linux.txt, and amd64.txt.
 
+# Target ISA baseline: x86-64-v3 (Haswell-class). Implies SSE4.2 + AVX +
+# AVX2 + BMI1 + BMI2 + F16C + FMA + LZCNT + MOVBE + POPCNT + OSXSAVE.
+# Anything below this is not a supported deployment target for Elide on
+# Linux/amd64. To extend with vendor-neutral additions (e.g. AES-NI,
+# PCLMUL, SHA-NI, VAES, GFNI), append "+aes+pclmul+sha" etc. to a
+# downstream override — keeping the baseline conservative here so a
+# pre-Skylake Xeon-D / Excavator host still runs the binary.
+-march=x86-64-v3
+
+# Intel CET — Indirect Branch Tracking + shadow stack. `=full` enables
+# both -mibt and -mshstk. Cheap on hardware that supports it (Tiger Lake+
+# / Zen 4+); silently transparent on older CPUs because the ENDBR64 prefix
+# decodes as a NOP, and the shadow stack is only consulted when the kernel
+# advertises CET support. Linux 5.18+ wires the userspace bits up via
+# arch_prctl. Pairs with the assembler emitting NT_GNU_PROPERTY_TYPE_0
+# notes so the loader can verify the binary opted in.
+-fcf-protection=full
+
 # Emit per-basic-block sections so the linker can reorder/discard at finer
 # granularity than per-function. clang's `=all` form is gated to x86 ELF;
 # AArch64 clang on Alpine rejects `all` ('invalid value all') even though

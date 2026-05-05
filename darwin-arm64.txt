@@ -1,0 +1,18 @@
+# macOS + Apple Silicon only — appended after base.txt, darwin.txt, and
+# arm64.txt.
+
+# Target the Apple M1 microarchitecture as the floor. Every Apple Silicon
+# Mac shipped (M1 → M4) is a strict superset; targeting `apple-m1`
+# unlocks the Apple-specific scheduling model and the ARMv8.5-A feature
+# set (FEAT_BTI, FEAT_PAuth, FEAT_FRINTTS, FEAT_FlagM2, …) without
+# requiring per-chip rebuilds. Using `-mcpu=apple-m1` instead of
+# `-march=armv8.5-a` lets the backend pick Apple's preferred instruction
+# selection / costs.
+-mcpu=apple-m1
+
+# Pointer Authentication + Branch Target Identification. Apple's userspace
+# ABI already uses pac-ret extensively (every page in the dyld shared
+# cache is signed); enabling `standard` here makes our static-archive
+# code consistent with the surrounding Apple ABI and turns on BTI landing
+# pads that dyld honors when mapping our pages.
+-mbranch-protection=standard

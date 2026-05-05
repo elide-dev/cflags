@@ -1,0 +1,33 @@
+# Linux + arm64 (aarch64) only — appended after base.txt, linux.txt, and
+# arm64.txt.
+
+# Target ISA baseline: ARMv8.2-A with crypto + CRC. Matches the "server
+# arm64" floor (Neoverse N1, Graviton 2+, Ampere Altra) without requiring
+# Neoverse-V1-only features like SVE. Pulls in dotprod (helpful for
+# BoringSSL's vectorized GHASH/Poly1305), the FP16 ops, and the AES /
+# SHA-1 / SHA-2 / PMULL instruction families used heavily in BoringSSL.
+-march=armv8.2-a+crypto+crc+dotprod
+
+# Pointer Authentication + Branch Target Identification. `standard` is the
+# clang-recommended bundle:
+#   - pac-ret   : sign LR on function entry, authenticate on return
+#                 (defeats most ROP-style return-address overwrite).
+#   - bti       : emit BTI landing pads at indirect-branch targets so the
+#                 PE marks code pages with PROT_BTI; on hardware that
+#                 supports it (ARMv8.5+, Apple M1+, Neoverse-N2/V1+)
+#                 indirect branches into non-landing-pad bytes trap.
+# Backwards-compatible: PAC instructions are HINT-space NOPs on pre-v8.3
+# hardware, BTI lands in HINT space too. Net: hardening on modern silicon,
+# zero cost on older.
+-mbranch-protection=standard
+
+# Tell the dynamic linker that this object/binary requires PROT_BTI on its
+# executable mappings. Without `-z force-bti` the BTI landing pads emitted
+# above are just NOPs; with it, the PT_GNU_PROPERTY note is generated and
+# the loader maps the text segment with PROT_BTI on capable kernels.
+-Wl,-z,force-bti
+
+# Use PAC for the lazy-resolver PLT stubs (when present). With -fno-plt +
+# -z now in linux.txt the PLT is largely vestigial, but any remaining
+# stub gets pac-ret protection here.
+-Wl,-z,pac-plt

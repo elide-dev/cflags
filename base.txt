@@ -11,14 +11,18 @@
 #   linux-amd64.txt / linux-arm64.txt / darwin-arm64.txt / …          — per OS+arch
 # The script picks the matching OS, arch, and OS-arch files based on the
 # build profile; matching files concatenate in order: base → os → arch → os-arch.
+#
+# Toolchain assumption: clang 22.x on every supported platform (no GCC, no
+# Apple-clang). Flags here must work on mainline clang for both Linux and
+# macOS. Anything GCC-only or platform-specific belongs in a sibling file.
 
 # Enable thin LTO; generates LLVM bitcode for library outputs, instead of e.g. machO
 # or ELF. Then, applies whole-program optimization at final link stages.
 -flto=thin
 
 # Emit each function and data object into its own section so the linker
-# (with --gc-sections) can drop anything unreferenced. Trims binary size
-# and removes dead code from the final image.
+# (with --gc-sections / -dead_strip) can drop anything unreferenced. Trims
+# binary size and removes dead code from the final image.
 -ffunction-sections
 -fdata-sections
 
@@ -53,13 +57,19 @@
 -fPIE
 
 # Hardening and unwind/debuggability flags:
-#   stack-clash-protection      - probe each new stack page on allocation so a large
-#                                 alloca/VLA can't jump the guard page into adjacent memory.
 #   stack-protector-strong      - insert canaries in functions with arrays or
 #                                 address-taken locals; balanced cost vs. -all.
+#   zero-call-used-regs=used-gpr- zero general-purpose registers that the function
+#                                 actually used before returning, shrinking the ROP/JOP
+#                                 gadget surface for spilled callee-saves and reducing
+#                                 secret leakage across call boundaries (clang 15+).
 #   exceptions                  - emit unwind tables for all code so stack unwinding
 #                                 (C++ exceptions, Rust panics, foreign runtimes)
 #                                 can traverse C frames cleanly.
+#   asynchronous-unwind-tables  - emit unwind info usable from arbitrary signal/
+#                                 sample points (profilers, perf, crash collectors),
+#                                 not just at call boundaries. Stronger than the
+#                                 plain `-funwind-tables` implied by -fexceptions.
 #   no-omit-frame-pointer       - preserve %rbp/x29 for reliable backtraces in
 #                                 profilers, debuggers, and crash handlers.
 #   no-strict-aliasing          - disable type-based alias analysis; matches the
@@ -68,9 +78,13 @@
 #                                 closing a class of optimizer-induced bounds-check removals.
 #   no-delete-null-pointer-checks - keep explicit null checks even after a prior deref;
 #                                 prevents silent removal of defensive code.
--fstack-clash-protection
+#
+# NOTE: -fstack-clash-protection is intentionally NOT here — Apple's clang
+# rejects it on darwin (no codegen support). It lives in linux.txt instead.
 -fstack-protector-strong
+-fzero-call-used-regs=used-gpr
 -fexceptions
+-fasynchronous-unwind-tables
 -fno-omit-frame-pointer
 -fno-strict-aliasing
 -fno-strict-overflow
@@ -78,3 +92,66 @@
 
 # General definitions which always apply.
 -DELIDE
+
+# Warning configuration — clang-compatible set applied on every platform.
+# (GCC-only diagnostics like -Wlogical-op, -Wduplicated-cond/branches,
+# -Wtraditional-conversion, -Wformat-signedness, -Wformat-overflow=N,
+# -Wformat-truncation=N, -Wstringop-overflow=N, -Wtrampolines,
+# -Warith-conversion, -Whardened are deliberately omitted: clang either
+# rejects them outright or accepts them as no-ops, and combined with the
+# upstream -Werror they would either fail the build or give false confidence.)
+#
+#   Baselines:
+#     Wall, Wextra, Wpedantic      - standard escalation; Wpedantic enforces strict ISO C/C++.
+#
+#   Format strings:
+#     Wformat=2, Wformat-security  - maximum scrutiny on printf/scanf families:
+#                                    arg-type mismatches and %s on non-literal format strings.
+#
+#   Memory and bounds:
+#     Wnull-dereference            - flag paths that may deref a known-null pointer.
+#     Warray-bounds                - out-of-bounds index detection.
+#     Wstack-usage=1000000         - warn on any function whose frame exceeds 1 MB.
+#
+#   Stack/control-flow surface:
+#     Wstack-protector             - warn when a canary was requested but couldn't be inserted.
+#     Walloca, Wvla                - warn on dynamic stack allocation (alloca + VLAs);
+#                                    both defeat stack-usage analysis and clash protection.
+#
+#   Integer/conversion correctness:
+#     Wshift-overflow              - flag shifts that overflow or shift the sign bit.
+#     Wstrict-overflow             - call out optimizations that assume signed overflow is UB.
+#     Wconversion                  - implicit narrowing/sign-changing conversions.
+#
+#   Logic and control flow:
+#     Wimplicit-fallthrough        - require an explicit attribute to fall through a case.
+#     Wswitch-default, Wswitch-enum - require a default and exhaustive enum coverage.
+#     Wshadow                      - any identifier shadowing in nested scopes.
+#     Wundef                       - referencing an undefined identifier in #if.
+#
+#   Types, casts, prototypes:
+#     Wcast-qual                   - casts that strip const/volatile.
+#     Wcast-align                  - casts to a stricter-aligned type.
+#     Wstrict-prototypes           - reject K&R-style () declarations (C only; harmless on C++).
+-Wall
+-Wextra
+-Wpedantic
+-Wformat=2
+-Wformat-security
+-Wnull-dereference
+-Wstack-protector
+-Walloca
+-Wvla
+-Warray-bounds
+-Wimplicit-fallthrough
+-Wshift-overflow
+-Wcast-qual
+-Wcast-align
+-Wconversion
+-Wshadow
+-Wundef
+-Wstrict-prototypes
+-Wstrict-overflow
+-Wswitch-default
+-Wswitch-enum
+-Wstack-usage=1000000

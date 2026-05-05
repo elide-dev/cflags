@@ -1,6 +1,7 @@
 # Linux-only C flags — appended after cflags/base.txt for any build that
 # targets Linux (linux / linux-aarch64 / linux-riscv64 profiles). Apple's
-# clang does not implement these, so they have to live outside base.txt.
+# clang either does not implement these, or the macOS runtime does not
+# back them, so they have to live outside base.txt.
 
 # Probe + clobber the unallocated stack to defeat Stack Clash attacks. clang
 # implements this for Linux/{x86,x86_64,riscv} and Linux/aarch64; Apple's
@@ -26,12 +27,47 @@
 # darwin: cmake build aborts. Linux only.
 -fexperimental-relative-c++-abi-vtables
 
+# Skip the dynamic-symbol interposition contract for our own definitions:
+# under ELF the linker assumes any global symbol in a shared library can
+# be replaced via LD_PRELOAD, which forces every intra-library call through
+# the GOT/PLT and disables a wide range of inlining + IPO. Disabling it
+# lets clang resolve calls and constants directly inside the same DSO.
+# Combined with -fno-plt below, the call-site overhead approaches a static
+# build's. Linux/ELF only — Mach-O has different visibility semantics and
+# clang ignores this flag there.
+-fno-semantic-interposition
+
+# Skip the PLT for external calls and route them through GOT loads instead.
+# Pairs with -Wl,-z,now (full RELRO): the GOT is resolved at load time and
+# made read-only, so removing the lazy-binding PLT shrinks code size,
+# eliminates a layer of indirection on hot calls, and removes the writable
+# PLT-stub gadget surface from the binary. Linux/ELF only.
+-fno-plt
+
+# Glibc fortified-source: replace selected libc calls (str*, mem*, sprintf
+# family, read/write, …) with __*_chk variants that bounds-check at runtime
+# whenever the compiler can constant-fold the destination size. Level 3
+# extends the analysis to non-constant sizes via __builtin_dynamic_object_size
+# and requires glibc 2.34+ / clang ≥ 9 / -O1+ (we use -O3). On musl it
+# silently degrades to level 2, which is still strictly better than
+# unfortified. Defining it here also shadows any weaker -D_FORTIFY_SOURCE
+# the upstream Makefiles may set.
+-U_FORTIFY_SOURCE
+-D_FORTIFY_SOURCE=3
+
+# libstdc++ runtime assertions: turn on bounds checks in std::vector,
+# std::string, std::span, iterators, etc. Cheap (mostly inlined) and
+# catches indexing/iterator misuse in the BoringSSL C++ test binaries.
+# No-op when libstdc++ headers aren't included. Linux only because Apple
+# ships libc++ — see darwin.txt for the libc++ analogue.
+-D_GLIBCXX_ASSERTIONS
+
 # Pass through to the LLVM backend and enable Polly, the polyhedral loop
 # optimizer. Performs high-level transformations (tiling, fusion, skewing,
 # auto-parallelization, improved vectorization) on affine loop nests by
-# modeling them as polyhedra. Requires a Clang built with Polly support;
-# gains are concentrated in numeric/array-heavy code and are negligible or
-# negative elsewhere.
+# modeling them as polyhedra. Requires a Clang built with Polly support
+# (the official LLVM clang-22 build does); gains are concentrated in
+# numeric/array-heavy code and are negligible or negative elsewhere.
 -mllvm
 -polly
 
@@ -41,97 +77,37 @@
 # silently undoing -Wl,-z,noexecstack.
 -Wa,--noexecstack
 
-# Linker hardening flags:
-#   relro          - mark GOT and other ELF sections read-only after relocation (partial RELRO).
-#   now            - disable lazy PLT binding; resolve all symbols at load time. Combined
-#                    with relro this yields full RELRO, hardening the GOT against overwrite.
-#   noexecstack    - set PT_GNU_STACK to non-executable; blocks shellcode execution from the stack.
-#   separate-code  - place executable code in its own pages with no readable data alongside,
-#                    reducing info leaks and limiting ROP gadget exposure.
+# Linker hardening + size flags:
+#   relro                  - mark GOT and other ELF sections read-only after relocation.
+#   now                    - disable lazy PLT binding; resolve all symbols at load time.
+#                            Combined with relro this yields full RELRO, hardening the
+#                            GOT against overwrite (and it's required to make -fno-plt
+#                            useful, since there is no longer a lazy resolver to fall
+#                            back to).
+#   noexecstack            - set PT_GNU_STACK to non-executable; blocks shellcode
+#                            execution from the stack.
+#   separate-code          - place executable code in its own pages with no readable
+#                            data alongside, reducing info leaks and limiting ROP
+#                            gadget exposure.
+#   pack-relative-relocs   - emit DT_RELR-format relative relocations instead of the
+#                            full RELA encoding. Substantially smaller .rela.dyn for
+#                            PIE/PIC binaries on glibc 2.36+ / lld 15+.
+#   --gc-sections          - drop unreferenced sections produced by -ffunction-sections
+#                            / -fdata-sections (this is the consumer of those flags).
+#   --as-needed            - skip DT_NEEDED entries for shared libs whose symbols are
+#                            never actually referenced; trims runtime dep surface.
+#   --icf=safe             - lld identical-code-folding, "safe" variant: only fold
+#                            functions whose address isn't taken. Frees code size
+#                            without breaking function-pointer identity.
+#   --build-id=sha1        - embed a deterministic build ID for crash-server lookup.
+#   -O2                    - linker-side string/section optimization (small win, free).
 -Wl,-z,relro
 -Wl,-z,now
 -Wl,-z,noexecstack
 -Wl,-z,separate-code
-
-# Warning configuration. Grouped roughly:
-#
-#   Baselines:
-#     Wall, Wextra, Wpedantic      - standard escalation; Wpedantic enforces strict ISO C/C++.
-#
-#   Format strings:
-#     Wformat=2, Wformat-overflow=2, Wformat-truncation=2, Wformat-security,
-#     Wformat-signedness           - maximum scrutiny on printf/scanf families:
-#                                    arg-type mismatches, sn/printf truncation, %s on
-#                                    non-literal format strings, signed/unsigned mismatches.
-#
-#   Memory and bounds:
-#     Wnull-dereference            - flag paths that may deref a known-null pointer.
-#     Warray-bounds=2              - aggressive out-of-bounds index detection.
-#     Wstringop-overflow=4         - strictest level for str/mem*() length analysis.
-#     Wstack-usage=1000000         - warn on any function whose frame exceeds 1 MB.
-#
-#   Stack/control-flow surface:
-#     Wstack-protector             - warn when a canary was requested but couldn't be inserted.
-#     Wtrampolines                 - flag executable-stack trampolines from nested functions.
-#     Walloca, Wvla                - warn on dynamic stack allocation (alloca + VLAs);
-#                                    both defeat stack-usage analysis and clash protection.
-#
-#   Integer/conversion correctness:
-#     Wshift-overflow=2            - flag shifts that overflow or shift the sign bit.
-#     Wstrict-overflow=4           - call out optimizations that assume signed overflow is UB.
-#     Wconversion, Warith-conversion - implicit narrowing/sign-changing conversions, including
-#                                    those introduced by arithmetic promotion.
-#     Wtraditional-conversion      - warn on prototype/K&R promotion mismatches.
-#
-#   Logic and control flow:
-#     Wimplicit-fallthrough=3      - require an explicit attribute to fall through a case.
-#     Wlogical-op                  - suspicious uses of &&/|| (e.g. `x && x`, mixed with bitwise).
-#     Wduplicated-cond,
-#     Wduplicated-branches         - copy/paste bugs in if/else chains.
-#     Wswitch-default, Wswitch-enum - require a default and exhaustive enum coverage.
-#     Wshadow                      - any identifier shadowing in nested scopes.
-#     Wundef                       - referencing an undefined identifier in #if.
-#
-#   Types, casts, prototypes:
-#     Wcast-qual                   - casts that strip const/volatile.
-#     Wcast-align=strict           - casts to a stricter-aligned type, even on x86 where
-#                                    misaligned access happens to work.
-#     Wstrict-prototypes           - reject K&R-style () declarations.
-#
-#   Suppression:
-#     Wno-hardened                 - silence GCC's meta-recommendation about hardening
-#                                    feature flags; we set those explicitly above and
-#                                    don't want the toolchain second-guessing the choices.
--Wall
--Wextra
--Wpedantic
--Wformat=2
--Wformat-overflow=2
--Wformat-truncation=2
--Wformat-security
--Wnull-dereference
--Wstack-protector
--Wtrampolines
--Walloca
--Wvla
--Warray-bounds=2
--Wimplicit-fallthrough=3
--Wtraditional-conversion
--Wshift-overflow=2
--Wcast-qual
--Wstringop-overflow=4
--Wconversion
--Warith-conversion
--Wlogical-op
--Wduplicated-cond
--Wduplicated-branches
--Wformat-signedness
--Wshadow
--Wstrict-overflow=4
--Wundef
--Wstrict-prototypes
--Wswitch-default
--Wswitch-enum
--Wstack-usage=1000000
--Wcast-align=strict
--Wno-hardened
+-Wl,-z,pack-relative-relocs
+-Wl,--gc-sections
+-Wl,--as-needed
+-Wl,--icf=safe
+-Wl,--build-id=sha1
+-Wl,-O2
