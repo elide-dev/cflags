@@ -1,0 +1,33 @@
+# Linux + amd64 — *final-link-only* flags. Appended after base.txt,
+# linux.txt, and linux-amd64.txt for the *consuming* project's
+# executable / shared-library link steps. Anything that strips sections,
+# rejects undefined symbols, or otherwise assumes "no further link stage
+# will follow" belongs here, NOT in linux-amd64.txt — applying these at
+# intermediate dependency-build links breaks autoconf conftests and
+# downstream test binaries.
+
+# Drop unreferenced sections produced by -ffunction-sections /
+# -fdata-sections (emitted in base.txt). The intermediate per-symbol
+# section granularity is wasted code-size unless somebody runs DCE; this
+# flag is the consumer of those flags. Safe at the final link because
+# there is no later stage that could still reference what's stripped.
+-Wl,--gc-sections
+
+# Reject any undefined symbol at link time. For shared libraries this
+# means every external dep must be in DT_NEEDED; for executables, every
+# external symbol must be resolvable. Catches missing libraries early
+# instead of failing at dlopen / runtime. Pairs naturally with `-z now`
+# (already enforced in linux.txt): if we're going to bind eagerly at
+# load anyway, we may as well prove it links cleanly.
+-Wl,-z,defs
+
+# Compress DWARF debug sections with zstd. lld ≥ 18 writes the modern
+# SHF_COMPRESSED form; binutils 2.42+, gdb 14+, and llvm-objdump 18+
+# read it. Substantial size reduction with -g (~40-60% smaller .debug_*),
+# zero runtime cost — debug sections aren't loaded into memory.
+-Wl,--compress-debug-sections=zstd
+
+# Make linker warnings fatal at the final link only — at intermediate
+# stages a benign warning (e.g. about a missing __start_/__stop_ alias
+# that gets defined later) would otherwise abort the dependency build.
+-Wl,--fatal-warnings

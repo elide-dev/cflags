@@ -4,6 +4,11 @@ Tree of simple text files which compound into final clang and LLD flags when bui
 
 Flag files allow comments which start with `#`. Comments are thus inline explaining the purpose of most flags.
 
+There are two classes of profile:
+
+- **Compile profiles** (`base`, `linux`, `darwin`, `linux-amd64`, …) apply to *every* translation unit and link stage in the dependency-build pipeline (Netty C, BoringSSL, autoconf conftests, …). Anything here must be safe at intermediate link stages.
+- **Binary/leaf profiles** (`*-bin`, e.g. `linux-amd64-bin`) apply only at the consuming project's *final* executable / shared-library / dylib link. They hold flags — section stripping, undefined-symbol rejection, debug compression, fatal warnings — that would break a dependency's intermediate conftest or test-binary link if applied earlier. The leaf-bin profile is appended on top of its compile-profile rollup (e.g. `linux-amd64-bin` rolls up `base → linux → linux-amd64 → linux-amd64-bin`).
+
 ## Toolchain & deployment floor
 
 These flags assume the following floor; downstream consumers should match
@@ -47,14 +52,15 @@ Compiler features activated or facilitated by these flags:
 | Mach-O fixup chains           | Darwin        | `-bind_at_load`, `-fixup_chains`, `-no_data_in_code_info`         |
 
 > [!IMPORTANT]
-> **Section-stripping flags belong at the consumer's final link, not here.**
-> These flags are applied to dependency builds (Netty, BoringSSL TCNative, etc.)
-> where intermediate links (autoconf conftests, dependency test binaries) still
-> reference the sections that `-Wl,--gc-sections` / `-Wl,-dead_strip` would drop.
-> The compiler still emits per-function/data sections via
-> `-ffunction-sections` / `-fdata-sections`, so the consuming project gets the
-> full DCE win by adding `-Wl,--gc-sections` (Linux) or `-Wl,-dead_strip`
-> (Darwin) to its **own** final link step.
+> **Section-stripping and similar "no further link" flags live in `*-bin`,
+> not in the per-OS or per-arch compile profiles.** The compile profiles
+> are applied to dependency builds (Netty, BoringSSL TCNative, autoconf
+> conftests, …) where intermediate links still reference symbols that
+> `-Wl,--gc-sections` / `-Wl,-dead_strip` would otherwise drop. The
+> compiler still emits per-function/data sections via
+> `-ffunction-sections` / `-fdata-sections`, so the consuming project
+> picks up the full DCE win by selecting the corresponding `*-bin`
+> profile (e.g. `linux-amd64-bin`) at its **own** final link step.
 
 > [!NOTE]
 > `-Wconversion` is intentionally not enabled — it's too noisy across Netty's
@@ -63,7 +69,11 @@ Compiler features activated or facilitated by these flags:
 
 ## Flag Profiles
 
-The following profiles are supported, and roll-up where supported (e.g. `linux-amd64` gets `base.txt`, then `linux.txt`, then `linux-amd64.txt`):
+Profiles roll up: `linux-amd64` gets `base.txt`, then `linux.txt`, then `linux-amd64.txt`. The `*-bin` profile rolls up everything its non-`-bin` sibling does, plus its own file last (so `linux-amd64-bin` = `base.txt` + `linux.txt` + `linux-amd64.txt` + `linux-amd64-bin.txt`).
+
+### Compile profiles
+
+Applied to every translation unit and every link in the dependency-build pipeline.
 
 | Profile | OS | Arch | Description |
 | --------- | ---- | ---- | -------- |
@@ -74,6 +84,17 @@ The following profiles are supported, and roll-up where supported (e.g. `linux-a
 | [darwin][4] | macOS | (All) | macOS-only flags. |
 | [darwin-amd64][5] | Darwin | amd64 | macOS Intel flags. |
 | [darwin-arm64][6] | Darwin | aarch64 | macOS M-series flags. |
+
+### Binary/leaf profiles
+
+Applied **only** at the consuming project's final executable / shared-library / dylib link step. Holds flags that would break intermediate dependency-build links (autoconf conftests, BoringSSL test binaries, …).
+
+| Profile | OS | Arch | Adds                                                                           |
+| ------- | ---- | ---- | ------------------------------------------------------------------------------ |
+| [linux-amd64-bin][11] | Linux  | amd64    | `--gc-sections`, `-z defs`, `--compress-debug-sections=zstd`, `--fatal-warnings` |
+| [linux-arm64-bin][12] | Linux  | aarch64  | Same as `linux-amd64-bin`                                                      |
+| [darwin-amd64-bin][13] | Darwin | amd64    | `-dead_strip`, `-dead_strip_dylibs`                                            |
+| [darwin-arm64-bin][14] | Darwin | aarch64  | Same as `darwin-amd64-bin`                                                     |
 
 > [!NOTE]
 > Windows is not covered here because we do not (yet) compile with `clang` on Windows.
@@ -96,3 +117,7 @@ So far, the following projects consume these flags:
 [8]: https://github.com/elide-dev/netty-tcnative
 [9]: https://clang.llvm.org/docs/ThinLTO.html
 [10]: https://lld.llvm.org/
+[11]: ./linux-amd64-bin.txt
+[12]: ./linux-arm64-bin.txt
+[13]: ./darwin-amd64-bin.txt
+[14]: ./darwin-arm64-bin.txt
