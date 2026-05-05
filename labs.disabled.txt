@@ -1,0 +1,53 @@
+# Security and hardening flags we have *temporarily* disabled across the
+# live profiles to optimise startup time. This file is NOT loaded by the
+# rollup or by cli/cflags.{sh,ts}; the resolver matches on a closed set
+# of filenames (base / $os / $os-$arch / $os-bin / $os-$arch-bin) and
+# silently ignores everything else.
+#
+# Treat this file as a tracked, reviewable parking lot — every flag
+# here is something we intend to phase back in as our perf budget grows.
+# Re-enabling is a literal cut-and-paste back into the named source
+# file plus a regression run on the BoringSSL TLS-handshake and Netty
+# cold-startup benches.
+#
+# ── from base.txt ────────────────────────────────────────────────────
+#
+# Stack canaries on functions with arrays / address-taken locals.
+# Cost: ~3-5% codesize growth + per-call canary load + epilogue check
+# on every protected function. Re-enable when we have a benchmark
+# harness that catches the cost on the BoringSSL handshake hot path.
+-fstack-protector-strong
+#
+# Zero general-purpose registers on function return; shrinks the
+# ROP/JOP gadget surface for spilled callee-saves and reduces secret
+# leakage across call boundaries. Cost: per-return reg-clearing
+# instructions, larger code. Re-enable alongside -fcf-protection=full
+# (below) once we deploy on a CET-capable floor and want defense-in-
+# depth on indirect-call edges.
+-fzero-call-used-regs=used-gpr
+#
+# ── from linux.txt ───────────────────────────────────────────────────
+#
+# Glibc/musl fortified-source level 2: replaces selected libc calls
+# (str*, mem*, sprintf family, read/write) with __*_chk variants that
+# bounds-check at runtime when the destination size is constant-
+# foldable. Cost: per-call bounds checks on libc hot paths. Re-enable
+# after we have a perf bench that catches the cost on JNI/Netty I/O
+# and on BoringSSL's str/mem-heavy routines.
+-U_FORTIFY_SOURCE
+-D_FORTIFY_SOURCE=2
+#
+# libc++ hardened-fast mode: bounds checks on std::vector, std::span,
+# std::string_view, iterator validity. Cost: per-access checks on the
+# libc++ hot paths the BoringSSL test binaries exercise. Re-enable
+# alongside _FORTIFY_SOURCE above.
+-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+#
+# ── from linux-amd64.txt ─────────────────────────────────────────────
+#
+# Intel CET: Indirect Branch Tracking (IBT) + shadow stack (SHSTK).
+# Cost: ENDBR64 prologue on every indirect-call target, plus shadow-
+# stack push/pop on call/return when the kernel honors it. Re-enable
+# when the linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+
+# and the userspace runtime contract is ready to require CET support.
+-fcf-protection=full

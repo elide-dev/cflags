@@ -34,22 +34,32 @@ Compiler features activated or facilitated by these flags:
 | ----------------------------- | ------------- | ----------------------------------------------------------------- |
 | [Thin LTO][9]                 | All           | Emits and optimizes as LLVM bitcode, program-wide                 |
 | Function/Data Sections        | All           | `-f{data,function}-sections` (collected at *final* link, see below) |
-| Stack Hardening               | All           | `-fstack-protector-strong`, `-fstack-clash-protection` (Linux)    |
-| Register Zeroing              | All           | `-fzero-call-used-regs=used-gpr` shrinks ROP/JOP gadget surface   |
+| Constant merging              | All           | `-fmerge-all-constants` for smaller binary + fewer relocs at load |
+| Stack Hardening               | Linux         | `-fstack-clash-protection` (canaries are parked, see "Phasing in") |
 | Async Unwind Tables           | All           | `-fasynchronous-unwind-tables` for profilers + crash collectors   |
-| FORTIFY_SOURCE=2              | Linux + Darwin| musl-compatible level 2; glibc consumers may override to `=3`     |
-| libc++ hardening (FAST)       | Linux + Darwin| `_LIBCPP_HARDENING_MODE_FAST` for vendored / Apple libc++         |
 | [LLD][10] as linker           | All           | `-fuse-ld=lld` required for Thin LTO                              |
 | Full RELRO + `-fno-plt`       | Linux         | `-z relro -z now` plus PLT-less call lowering                     |
 | No semantic interposition     | Linux         | `-fno-semantic-interposition` for intra-DSO inlining              |
 | DT_RELR relative relocations  | Linux         | `-z pack-relative-relocs` shrinks PIE relocation tables           |
 | LLD ICF (safe)                | Linux         | `--icf=safe` folds identical address-not-taken functions          |
+| GNU-hash dyn-symbol table     | Linux         | `--hash-style=gnu` (smaller, ~2× faster lookup at load)           |
+| LLD link optimization         | Linux         | `-Wl,-O3` aggressive string/section merging at link time          |
 | Relative C++ ABI vtables      | Linux         | Enables relative vtable references program-wide                   |
-| Linker-driven Reordering      | Linux amd64   | Emits `-fbasic-block-sections=all` for reordering                 |
-| Intel CET (IBT + shadow stk)  | Linux amd64   | `-fcf-protection=full`                                            |
+| Propeller-ready BB sections   | Linux amd64   | `-fbasic-block-sections=all` (awaiting symbol-ordering file)      |
 | Microarch tuning              | Linux amd64   | `-mtune=znver3` (mirrors Rust `-Ztune-cpu=znver3`)                |
 | PAC + BTI                     | arm64 (both)  | `-mbranch-protection=standard`; `-z force-bti` on Linux           |
 | Mach-O fixup chains           | Darwin        | `-bind_at_load`, `-fixup_chains`, `-no_data_in_code_info`         |
+
+### Phasing in
+
+Some hardening flags are temporarily disabled in the live profiles to
+prioritise startup time. They are tracked in [`labs.disabled.txt`][19]
+with a re-enable plan per flag. Currently parked:
+`-fstack-protector-strong`, `-fzero-call-used-regs=used-gpr`,
+`-fcf-protection=full`, `-D_FORTIFY_SOURCE=2`,
+`-D_LIBCPP_HARDENING_MODE_FAST`. The file is **not** consumed by the
+rollup or by `cli/cflags.{sh,ts}` — it is a parking lot, not a
+profile.
 
 > [!IMPORTANT]
 > **Section-stripping and similar "no further link" flags live in `*-bin`,
@@ -158,3 +168,4 @@ So far, the following projects consume these flags:
 [16]: ./darwin-bin.txt
 [17]: ./cli/cflags.sh
 [18]: ./cli/cflags.ts
+[19]: ./labs.disabled.txt
