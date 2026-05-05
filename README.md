@@ -99,6 +99,39 @@ Applied **only** at the consuming project's final executable / shared-library / 
 > [!NOTE]
 > Windows is not covered here because we do not (yet) compile with `clang` on Windows.
 
+## CLI
+
+Two equivalent scripts in [`cli/`](./cli) emit the resolved, comment-stripped flag list as a single whitespace-separated line, suitable for use directly with shell command substitution.
+
+| Script                      | Runtime |
+| --------------------------- | ------- |
+| [`cli/cflags.sh`][17]       | Bash    |
+| [`cli/cflags.ts`][18]       | Bun     |
+
+Both share the same surface:
+
+```
+cflags[.sh|.ts] [<os> <arch>] [--bin]
+```
+
+- `<os>` ∈ `linux | darwin` — defaults to the host
+- `<arch>` ∈ `amd64 | arm64` — defaults to the host
+- `--bin` — switch from the compile rollup (`base → os → os-arch`) to the binary rollup (`base → os → os-arch → os-bin → os-arch-bin`)
+
+Examples:
+
+```sh
+# host compile flags
+export CFLAGS="$(./cli/cflags.sh)"
+
+# host final-link flags
+export LDFLAGS="$(./cli/cflags.sh --bin)"
+
+# explicit cross-target
+export CFLAGS="$(bun run ./cli/cflags.ts linux arm64)"
+export LDFLAGS="$(bun run ./cli/cflags.ts linux arm64 --bin)"
+```
+
 ## Downstream Projects
 
 So far, the following projects consume these flags:
@@ -123,3 +156,5 @@ So far, the following projects consume these flags:
 [14]: ./darwin-arm64-bin.txt
 [15]: ./linux-bin.txt
 [16]: ./darwin-bin.txt
+[17]: ./cli/cflags.sh
+[18]: ./cli/cflags.ts
