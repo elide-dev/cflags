@@ -6,11 +6,15 @@
 # threaded into Makefile.static via the USER_CFLAGS make variable.
 #
 # Sibling files in this directory layer on top of base.txt:
-#   linux.txt / darwin.txt / openbsd.txt / freebsd.txt / windows.txt — per-OS
-#   amd64.txt / arm64.txt / riscv64.txt                               — per-arch
-#   linux-amd64.txt / linux-arm64.txt / darwin-arm64.txt / …          — per OS+arch
-# The script picks the matching OS, arch, and OS-arch files based on the
-# build profile; matching files concatenate in order: base → os → arch → os-arch.
+#   linux.txt / darwin.txt                                       — per-OS
+#   linux-amd64.txt / linux-arm64.txt /
+#     darwin-amd64.txt / darwin-arm64.txt                        — per OS+arch
+#   linux-bin.txt / darwin-bin.txt                               — per-OS final-link
+#   linux-amd64-bin.txt / linux-arm64-bin.txt /
+#     darwin-amd64-bin.txt / darwin-arm64-bin.txt                — per OS+arch final-link
+# Compile rollup: base → os → os-arch.
+# Binary  rollup: base → os → os-arch → os-bin → os-arch-bin.
+# See cli/cflags.{sh,ts} for the canonical resolver.
 #
 # Toolchain assumption: clang 22.x on every supported platform (no GCC, no
 # Apple-clang). Flags here must work on mainline clang for both Linux and

@@ -34,13 +34,18 @@ function die(msg: string, code = 2): never {
 }
 
 function usage(): never {
-  const text = readFileSync(fileURLToPath(import.meta.url), "utf8")
-    .split("\n")
-    .slice(1)
-    .map((l) => l.replace(/^\/\/ ?/, ""))
-    .join("\n")
-    .split(/\n\s*\n/)[0];
-  process.stderr.write(text + "\n");
+  // Walk every consecutive `//` comment line after the shebang and emit
+  // them stripped of the leading marker. Splitting on blank lines (the
+  // earlier approach) drops every paragraph after the first because
+  // intra-block separator lines are written as `//` followed by nothing,
+  // which becomes an empty line once the marker is stripped.
+  const lines = readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n");
+  const out: string[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].startsWith("//")) break;
+    out.push(lines[i].replace(/^\/\/ ?/, ""));
+  }
+  process.stderr.write(out.join("\n") + "\n");
   process.exit(0);
 }
 

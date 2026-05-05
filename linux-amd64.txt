@@ -1,4 +1,4 @@
-# Linux + amd64 only — appended after base.txt, linux.txt, and amd64.txt.
+# Linux + amd64 only — appended after base.txt and linux.txt.
 
 # Target ISA baseline: x86-64-v3 (Haswell-class). Implies SSE4.2 + AVX +
 # AVX2 + BMI1 + BMI2 + F16C + FMA + LZCNT + MOVBE + POPCNT + OSXSAVE.

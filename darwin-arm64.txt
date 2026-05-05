@@ -1,5 +1,4 @@
-# macOS + Apple Silicon only — appended after base.txt, darwin.txt, and
-# arm64.txt.
+# macOS + Apple Silicon only — appended after base.txt and darwin.txt.
 
 # Target the Apple M1 microarchitecture as the floor. Every Apple Silicon
 # Mac shipped (M1 → M4) is a strict superset; targeting `apple-m1`

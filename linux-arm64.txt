@@ -1,5 +1,4 @@
-# Linux + arm64 (aarch64) only — appended after base.txt, linux.txt, and
-# arm64.txt.
+# Linux + arm64 (aarch64) only — appended after base.txt and linux.txt.
 
 # Target ISA baseline: ARMv8.2-A with crypto + CRC. Matches the "server
 # arm64" floor (Neoverse N1, Graviton 2+, Ampere Altra) without requiring

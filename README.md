@@ -22,7 +22,7 @@ or override per-profile.
 | Linux libc++                | Vendored libc++ (Linux/amd64); `_LIBCPP_HARDENING_MODE` honored          |
 | macOS                       | macOS 12+ (dyld 4 / chained-fixups format)                               |
 | Linux/amd64 ISA             | `x86-64-v3` + `aes`/`pclmul`/`sha`/`vaes`/`gfni`/`rdrand` → Ice Lake / Zen 3+ |
-| Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → all Intel Macs (Ivy Bridge+)     |
+| Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → Haswell+ (2013); covers every Intel Mac supported by macOS 12+ |
 | Linux/arm64 ISA             | `armv8.2-a` + `crypto`/`crc`/`dotprod` → Graviton 2+, Neoverse N1+, Altra |
 | Darwin/arm64 ISA            | `apple-m1` (ARMv8.5-A) — every shipping Apple Silicon Mac                |
 
