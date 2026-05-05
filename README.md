@@ -8,9 +8,9 @@ Flag files allow comments which start with `#`. Comments are thus inline explain
 
 Compiler features activated or facilitated by these flags:
 
-| Flag(s)      | Feature   | Platforms | Description                                       |
-| ------------ | --------- | --------- | ------------------------------------------------- |
-| `-flto=thin` | Thin LTO  | All       | Emits and optimizes as LLVM bitcode, program-wide |
+| Flag(s)      | Feature       | Platforms | Description                                       |
+| ------------ | ------------- | --------- | ------------------------------------------------- |
+| `-flto=thin` | [Thin LTO][9] | All       | Emits and optimizes as LLVM bitcode, program-wide |
 
 ## Flag Profiles
 
@@ -45,3 +45,4 @@ So far, the following projects consume these flags:
 [6]: ./darwin-arm64.txt
 [7]: https://github.com/elide-dev/netty
 [8]: https://github.com/elide-dev/netty-tcnative
+[9]: https://clang.llvm.org/docs/ThinLTO.html
