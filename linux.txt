@@ -25,3 +25,113 @@
 # Net effect on Linux: smaller vtables + faster startup; net effect on
 # darwin: cmake build aborts. Linux only.
 -fexperimental-relative-c++-abi-vtables
+
+# Pass through to the LLVM backend and enable Polly, the polyhedral loop
+# optimizer. Performs high-level transformations (tiling, fusion, skewing,
+# auto-parallelization, improved vectorization) on affine loop nests by
+# modeling them as polyhedra. Requires a Clang built with Polly support;
+# gains are concentrated in numeric/array-heavy code and are negligible or
+# negative elsewhere.
+-mllvm
+-polly
+
+# Mark assembler-produced objects as not requiring an executable stack.
+# Without this, a single .s/.S input lacking a .note.GNU-stack section
+# poisons the linker into emitting PT_GNU_STACK as RWX for the whole binary,
+# silently undoing -Wl,-z,noexecstack.
+-Wa,--noexecstack
+
+# Linker hardening flags:
+#   relro          - mark GOT and other ELF sections read-only after relocation (partial RELRO).
+#   now            - disable lazy PLT binding; resolve all symbols at load time. Combined
+#                    with relro this yields full RELRO, hardening the GOT against overwrite.
+#   noexecstack    - set PT_GNU_STACK to non-executable; blocks shellcode execution from the stack.
+#   separate-code  - place executable code in its own pages with no readable data alongside,
+#                    reducing info leaks and limiting ROP gadget exposure.
+-Wl,-z,relro
+-Wl,-z,now
+-Wl,-z,noexecstack
+-Wl,-z,separate-code
+
+# Warning configuration. Grouped roughly:
+#
+#   Baselines:
+#     Wall, Wextra, Wpedantic      - standard escalation; Wpedantic enforces strict ISO C/C++.
+#
+#   Format strings:
+#     Wformat=2, Wformat-overflow=2, Wformat-truncation=2, Wformat-security,
+#     Wformat-signedness           - maximum scrutiny on printf/scanf families:
+#                                    arg-type mismatches, sn/printf truncation, %s on
+#                                    non-literal format strings, signed/unsigned mismatches.
+#
+#   Memory and bounds:
+#     Wnull-dereference            - flag paths that may deref a known-null pointer.
+#     Warray-bounds=2              - aggressive out-of-bounds index detection.
+#     Wstringop-overflow=4         - strictest level for str/mem*() length analysis.
+#     Wstack-usage=1000000         - warn on any function whose frame exceeds 1 MB.
+#
+#   Stack/control-flow surface:
+#     Wstack-protector             - warn when a canary was requested but couldn't be inserted.
+#     Wtrampolines                 - flag executable-stack trampolines from nested functions.
+#     Walloca, Wvla                - warn on dynamic stack allocation (alloca + VLAs);
+#                                    both defeat stack-usage analysis and clash protection.
+#
+#   Integer/conversion correctness:
+#     Wshift-overflow=2            - flag shifts that overflow or shift the sign bit.
+#     Wstrict-overflow=4           - call out optimizations that assume signed overflow is UB.
+#     Wconversion, Warith-conversion - implicit narrowing/sign-changing conversions, including
+#                                    those introduced by arithmetic promotion.
+#     Wtraditional-conversion      - warn on prototype/K&R promotion mismatches.
+#
+#   Logic and control flow:
+#     Wimplicit-fallthrough=3      - require an explicit attribute to fall through a case.
+#     Wlogical-op                  - suspicious uses of &&/|| (e.g. `x && x`, mixed with bitwise).
+#     Wduplicated-cond,
+#     Wduplicated-branches         - copy/paste bugs in if/else chains.
+#     Wswitch-default, Wswitch-enum - require a default and exhaustive enum coverage.
+#     Wshadow                      - any identifier shadowing in nested scopes.
+#     Wundef                       - referencing an undefined identifier in #if.
+#
+#   Types, casts, prototypes:
+#     Wcast-qual                   - casts that strip const/volatile.
+#     Wcast-align=strict           - casts to a stricter-aligned type, even on x86 where
+#                                    misaligned access happens to work.
+#     Wstrict-prototypes           - reject K&R-style () declarations.
+#
+#   Suppression:
+#     Wno-hardened                 - silence GCC's meta-recommendation about hardening
+#                                    feature flags; we set those explicitly above and
+#                                    don't want the toolchain second-guessing the choices.
+-Wall
+-Wextra
+-Wpedantic
+-Wformat=2
+-Wformat-overflow=2
+-Wformat-truncation=2
+-Wformat-security
+-Wnull-dereference
+-Wstack-protector
+-Wtrampolines
+-Walloca
+-Wvla
+-Warray-bounds=2
+-Wimplicit-fallthrough=3
+-Wtraditional-conversion
+-Wshift-overflow=2
+-Wcast-qual
+-Wstringop-overflow=4
+-Wconversion
+-Warith-conversion
+-Wlogical-op
+-Wduplicated-cond
+-Wduplicated-branches
+-Wformat-signedness
+-Wshadow
+-Wstrict-overflow=4
+-Wundef
+-Wstrict-prototypes
+-Wswitch-default
+-Wswitch-enum
+-Wstack-usage=1000000
+-Wcast-align=strict
+-Wno-hardened
