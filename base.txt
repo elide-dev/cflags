@@ -121,7 +121,8 @@
 #   Integer/conversion correctness:
 #     Wshift-overflow              - flag shifts that overflow or shift the sign bit.
 #     Wstrict-overflow             - call out optimizations that assume signed overflow is UB.
-#     Wconversion                  - implicit narrowing/sign-changing conversions.
+#     (-Wconversion is intentionally NOT enabled: too noisy across Netty's
+#      JNI glue and BoringSSL's x86 intrinsics, drowns the signal we do want.)
 #
 #   Logic and control flow:
 #     Wimplicit-fallthrough        - require an explicit attribute to fall through a case.
@@ -147,7 +148,6 @@
 -Wshift-overflow
 -Wcast-qual
 -Wcast-align
--Wconversion
 -Wshadow
 -Wundef
 -Wstrict-prototypes

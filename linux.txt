@@ -44,23 +44,26 @@
 # PLT-stub gadget surface from the binary. Linux/ELF only.
 -fno-plt
 
-# Glibc fortified-source: replace selected libc calls (str*, mem*, sprintf
-# family, read/write, …) with __*_chk variants that bounds-check at runtime
-# whenever the compiler can constant-fold the destination size. Level 3
-# extends the analysis to non-constant sizes via __builtin_dynamic_object_size
-# and requires glibc 2.34+ / clang ≥ 9 / -O1+ (we use -O3). On musl it
-# silently degrades to level 2, which is still strictly better than
-# unfortified. Defining it here also shadows any weaker -D_FORTIFY_SOURCE
-# the upstream Makefiles may set.
+# Fortified-source level 2: replaces selected libc calls (str*, mem*,
+# sprintf family, read/write, …) with __*_chk variants that bounds-check
+# at runtime whenever the destination size is constant-foldable. We pin
+# at level 2 (not 3) because Linux/amd64 ships against musl, and musl
+# implements _FORTIFY_SOURCE through level 2 — level 3 depends on
+# glibc-only __*_chk_dyn variants for __builtin_dynamic_object_size and
+# fails to link against musl's libc.a. Glibc consumers can override to
+# =3 in a downstream profile if they wish.
 -U_FORTIFY_SOURCE
--D_FORTIFY_SOURCE=3
+-D_FORTIFY_SOURCE=2
 
-# libstdc++ runtime assertions: turn on bounds checks in std::vector,
-# std::string, std::span, iterators, etc. Cheap (mostly inlined) and
-# catches indexing/iterator misuse in the BoringSSL C++ test binaries.
-# No-op when libstdc++ headers aren't included. Linux only because Apple
-# ships libc++ — see darwin.txt for the libc++ analogue.
--D_GLIBCXX_ASSERTIONS
+# libc++ hardened mode: turns on bounds checks for std::vector, std::span,
+# std::string_view, iterator validity, etc. We build our own libc++ on
+# linux-amd64, and the BoringSSL test binaries pick up the hardened
+# headers from there. The macro is a plain #define — when libc++ headers
+# aren't included on a given TU it's simply unused, so defining it
+# unconditionally on Linux is safe.
+# (-D_GLIBCXX_ASSERTIONS is intentionally absent: it's the libstdc++
+# analogue, and we don't ship libstdc++ on this platform.)
+-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 
 # Pass through to the LLVM backend and enable Polly, the polyhedral loop
 # optimizer. Performs high-level transformations (tiling, fusion, skewing,
@@ -77,7 +80,15 @@
 # silently undoing -Wl,-z,noexecstack.
 -Wa,--noexecstack
 
-# Linker hardening + size flags:
+# Linker hardening + size flags. Anything that drops sections from the
+# output (--gc-sections) is intentionally NOT here: dependency builds run
+# intermediate links (autoconf conftests, BoringSSL test executables, …)
+# and a too-eager DCE pass at this stage strips symbols that a later
+# build stage still wants. The compiler still emits per-function/data
+# sections via -ffunction-sections / -fdata-sections in base.txt, so the
+# consuming project can run --gc-sections at its final link step and get
+# the same DCE for free.
+#
 #   relro                  - mark GOT and other ELF sections read-only after relocation.
 #   now                    - disable lazy PLT binding; resolve all symbols at load time.
 #                            Combined with relro this yields full RELRO, hardening the
@@ -92,13 +103,11 @@
 #   pack-relative-relocs   - emit DT_RELR-format relative relocations instead of the
 #                            full RELA encoding. Substantially smaller .rela.dyn for
 #                            PIE/PIC binaries on glibc 2.36+ / lld 15+.
-#   --gc-sections          - drop unreferenced sections produced by -ffunction-sections
-#                            / -fdata-sections (this is the consumer of those flags).
 #   --as-needed            - skip DT_NEEDED entries for shared libs whose symbols are
 #                            never actually referenced; trims runtime dep surface.
 #   --icf=safe             - lld identical-code-folding, "safe" variant: only fold
-#                            functions whose address isn't taken. Frees code size
-#                            without breaking function-pointer identity.
+#                            functions whose address isn't taken. Doesn't drop sections,
+#                            so safe to apply at every link stage.
 #   --build-id=sha1        - embed a deterministic build ID for crash-server lookup.
 #   -O2                    - linker-side string/section optimization (small win, free).
 -Wl,-z,relro
@@ -106,7 +115,6 @@
 -Wl,-z,noexecstack
 -Wl,-z,separate-code
 -Wl,-z,pack-relative-relocs
--Wl,--gc-sections
 -Wl,--as-needed
 -Wl,--icf=safe
 -Wl,--build-id=sha1

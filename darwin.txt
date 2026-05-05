@@ -28,10 +28,12 @@
 # Mach-O linker flags — equivalent to the -z relro/now/separate-code
 # bundle on ELF. Mach-O is structurally less leaky (no GOT to overwrite
 # in the ELF sense, no lazy PLT after fixup chains land), so the
-# hardening surface is smaller.
+# hardening surface is smaller. -dead_strip (the Mach-O analogue of
+# --gc-sections) is intentionally NOT here for the same reason it's
+# omitted from linux.txt: stripping at every intermediate link breaks
+# autoconf conftests and dependency test binaries. Apply it at the
+# final link in the consuming project.
 #
-#   -dead_strip            - drop unreferenced symbols/sections (consumer of
-#                            -ffunction-sections / -fdata-sections from base).
 #   -bind_at_load          - resolve all lazy bindings at load time (analogue
 #                            of `-z now`); pairs with the chained-fixups format
 #                            below to harden the import table.
@@ -42,7 +44,6 @@
 #   -no_data_in_code_info  - drop the LC_DATA_IN_CODE table; nothing in our
 #                            translation units mixes literal data into text
 #                            sections, and dropping it shrinks the binary.
--Wl,-dead_strip
 -Wl,-bind_at_load
 -Wl,-fixup_chains
 -Wl,-no_data_in_code_info

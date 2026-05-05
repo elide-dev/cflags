@@ -4,6 +4,23 @@ Tree of simple text files which compound into final clang and LLD flags when bui
 
 Flag files allow comments which start with `#`. Comments are thus inline explaining the purpose of most flags.
 
+## Toolchain & deployment floor
+
+These flags assume the following floor; downstream consumers should match
+or override per-profile.
+
+| Layer                       | Floor                                                                    |
+| --------------------------- | ------------------------------------------------------------------------ |
+| Compiler                    | mainline LLVM **clang 22.x** (Polly-enabled), on every platform          |
+| Linker                      | **lld** (`ld.lld` on Linux, `ld64.lld` on Darwin)                        |
+| Linux libc                  | **musl 1.2.x** primary; **glibc 2.36+** for any glibc consumers          |
+| Linux libc++                | Vendored libc++ (Linux/amd64); `_LIBCPP_HARDENING_MODE` honored          |
+| macOS                       | macOS 12+ (dyld 4 / chained-fixups format)                               |
+| Linux/amd64 ISA             | `x86-64-v3` + `aes`/`pclmul`/`sha`/`vaes`/`gfni`/`rdrand` → Ice Lake / Zen 3+ |
+| Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → all Intel Macs (Ivy Bridge+)     |
+| Linux/arm64 ISA             | `armv8.2-a` + `crypto`/`crc`/`dotprod` → Graviton 2+, Neoverse N1+, Altra |
+| Darwin/arm64 ISA            | `apple-m1` (ARMv8.5-A) — every shipping Apple Silicon Mac                |
+
 ## Features
 
 Compiler features activated or facilitated by these flags:
@@ -11,12 +28,12 @@ Compiler features activated or facilitated by these flags:
 | Feature                       | Platforms     | Description                                                       |
 | ----------------------------- | ------------- | ----------------------------------------------------------------- |
 | [Thin LTO][9]                 | All           | Emits and optimizes as LLVM bitcode, program-wide                 |
-| Function/Data Sections        | All           | `-f{data,function}-sections` for link-time DCE                    |
+| Function/Data Sections        | All           | `-f{data,function}-sections` (collected at *final* link, see below) |
 | Stack Hardening               | All           | `-fstack-protector-strong`, `-fstack-clash-protection` (Linux)    |
 | Register Zeroing              | All           | `-fzero-call-used-regs=used-gpr` shrinks ROP/JOP gadget surface   |
 | Async Unwind Tables           | All           | `-fasynchronous-unwind-tables` for profilers + crash collectors   |
-| FORTIFY_SOURCE                | All           | Level 3 on glibc, level 2 on Apple libc                           |
-| C++ stdlib hardening          | All           | `_GLIBCXX_ASSERTIONS` (Linux) / `_LIBCPP_HARDENING_MODE` (Darwin) |
+| FORTIFY_SOURCE=2              | Linux + Darwin| musl-compatible level 2; glibc consumers may override to `=3`     |
+| libc++ hardening (FAST)       | Linux + Darwin| `_LIBCPP_HARDENING_MODE_FAST` for vendored / Apple libc++         |
 | [LLD][10] as linker           | All           | `-fuse-ld=lld` required for Thin LTO                              |
 | Full RELRO + `-fno-plt`       | Linux         | `-z relro -z now` plus PLT-less call lowering                     |
 | No semantic interposition     | Linux         | `-fno-semantic-interposition` for intra-DSO inlining              |
@@ -24,12 +41,25 @@ Compiler features activated or facilitated by these flags:
 | LLD ICF (safe)                | Linux         | `--icf=safe` folds identical address-not-taken functions          |
 | Relative C++ ABI vtables      | Linux         | Enables relative vtable references program-wide                   |
 | Linker-driven Reordering      | Linux amd64   | Emits `-fbasic-block-sections=all` for reordering                 |
-| `x86-64-v3` ISA baseline      | amd64         | Haswell-class floor (AVX2/BMI2/FMA/F16C/LZCNT/MOVBE)              |
 | Intel CET (IBT + shadow stk)  | Linux amd64   | `-fcf-protection=full`                                            |
-| `armv8.2-a` + crypto baseline | Linux arm64   | Server arm64 floor with AES/SHA/PMULL/CRC/dotprod                 |
-| `apple-m1` baseline           | Darwin arm64  | Apple Silicon scheduling + ARMv8.5-A features                     |
+| Microarch tuning              | Linux amd64   | `-mtune=znver3` (mirrors Rust `-Ztune-cpu=znver3`)                |
 | PAC + BTI                     | arm64 (both)  | `-mbranch-protection=standard`; `-z force-bti` on Linux           |
-| Mach-O hardening              | Darwin        | `-dead_strip`, `-bind_at_load`, `-fixup_chains`                   |
+| Mach-O fixup chains           | Darwin        | `-bind_at_load`, `-fixup_chains`, `-no_data_in_code_info`         |
+
+> [!IMPORTANT]
+> **Section-stripping flags belong at the consumer's final link, not here.**
+> These flags are applied to dependency builds (Netty, BoringSSL TCNative, etc.)
+> where intermediate links (autoconf conftests, dependency test binaries) still
+> reference the sections that `-Wl,--gc-sections` / `-Wl,-dead_strip` would drop.
+> The compiler still emits per-function/data sections via
+> `-ffunction-sections` / `-fdata-sections`, so the consuming project gets the
+> full DCE win by adding `-Wl,--gc-sections` (Linux) or `-Wl,-dead_strip`
+> (Darwin) to its **own** final link step.
+
+> [!NOTE]
+> `-Wconversion` is intentionally not enabled — it's too noisy across Netty's
+> JNI glue and BoringSSL's x86 intrinsics to be useful as a blanket warning.
+> Re-enable selectively per-target if needed.
 
 ## Flag Profiles
 
