@@ -1,0 +1,19 @@
+# macOS — *final-link-only* flags shared by every darwin/$arch-bin profile.
+# Appended after base.txt + darwin.txt + darwin-$arch.txt at the consuming
+# project's executable / dylib link step. Anything Mach-O-wide that would
+# break a dependency build's intermediate conftest or test-binary link
+# goes here. Per-arch final-link flags (currently none) live in the
+# darwin-$arch-bin.txt sibling.
+
+# Drop unreferenced symbols/sections (Mach-O equivalent of
+# --gc-sections). Consumes -ffunction-sections / -fdata-sections from
+# base.txt. Safe at the final link only — applying it at intermediate
+# dependency-build links strips symbols that a later stage still
+# references (autoconf conftests, BoringSSL test executables, …).
+-Wl,-dead_strip
+
+# Drop entries in LC_LOAD_DYLIB whose symbols are never actually
+# referenced by the linked output. Mach-O equivalent of --as-needed:
+# trims runtime dyld dep surface and removes the corresponding
+# rpath/dlopen attack surface. Both ld64 and ld64.lld implement it.
+-Wl,-dead_strip_dylibs

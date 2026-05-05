@@ -1,17 +1,7 @@
-# macOS + Intel — *final-link-only* flags. Appended after base.txt,
-# darwin.txt, and darwin-amd64.txt for the consuming project's
-# executable / dylib link steps. Anything that strips Mach-O sections
-# or otherwise assumes "no further link stage will follow" belongs here,
-# NOT in darwin-amd64.txt — applying it at intermediate dependency-build
-# links breaks autoconf conftests and BoringSSL test binaries.
-
-# Drop unreferenced symbols/sections (Mach-O equivalent of
-# --gc-sections). Consumes -ffunction-sections / -fdata-sections from
-# base.txt. Safe at the final link only.
--Wl,-dead_strip
-
-# Drop entries in LC_LOAD_DYLIB whose symbols are never actually
-# referenced by the linked output. Mach-O equivalent of --as-needed:
-# trims runtime dyld dep surface and removes the corresponding
-# rpath/dlopen attack surface. Both ld64 and ld64.lld implement it.
--Wl,-dead_strip_dylibs
+# macOS + Intel — *final-link-only* flags specific to x86_64. Appended
+# after base.txt + darwin.txt + darwin-amd64.txt + darwin-bin.txt at
+# the consuming project's executable / dylib link step.
+#
+# Currently empty: every final-link flag we apply is Mach-O-wide and
+# lives in darwin-bin.txt. This file exists as a placeholder for any
+# future Intel-Mac-only leaf-link flag.

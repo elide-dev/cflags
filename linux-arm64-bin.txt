@@ -1,17 +1,8 @@
-# Linux + arm64 — *final-link-only* flags. Appended after base.txt,
-# linux.txt, and linux-arm64.txt for the consuming project's executable /
-# shared-library link steps. See linux-amd64-bin.txt for the rationale —
-# the same dependency-build-vs-final-link split applies on aarch64.
-
-# Drop unreferenced sections (DCE consumer of -ffunction-sections /
-# -fdata-sections). Safe at the final link only.
--Wl,--gc-sections
-
-# Reject any undefined symbol at link time. See linux-amd64-bin.txt.
--Wl,-z,defs
-
-# Compress DWARF debug sections with zstd. See linux-amd64-bin.txt.
--Wl,--compress-debug-sections=zstd
-
-# Promote linker warnings to errors at the final link only.
--Wl,--fatal-warnings
+# Linux + arm64 — *final-link-only* flags specific to aarch64. Appended
+# after base.txt + linux.txt + linux-arm64.txt + linux-bin.txt at the
+# consuming project's executable / shared-library link step.
+#
+# Currently empty: every final-link flag we apply is ELF-wide and lives
+# in linux-bin.txt. This file exists as a placeholder for any future
+# aarch64-only leaf-link flag (e.g. tightening BTI / PAC handling beyond
+# what -z force-bti / -z pac-plt already enable in linux-arm64.txt).

@@ -7,7 +7,7 @@ Flag files allow comments which start with `#`. Comments are thus inline explain
 There are two classes of profile:
 
 - **Compile profiles** (`base`, `linux`, `darwin`, `linux-amd64`, …) apply to *every* translation unit and link stage in the dependency-build pipeline (Netty C, BoringSSL, autoconf conftests, …). Anything here must be safe at intermediate link stages.
-- **Binary/leaf profiles** (`*-bin`, e.g. `linux-amd64-bin`) apply only at the consuming project's *final* executable / shared-library / dylib link. They hold flags — section stripping, undefined-symbol rejection, debug compression, fatal warnings — that would break a dependency's intermediate conftest or test-binary link if applied earlier. The leaf-bin profile is appended on top of its compile-profile rollup (e.g. `linux-amd64-bin` rolls up `base → linux → linux-amd64 → linux-amd64-bin`).
+- **Binary profiles** (`*-bin`) apply only at the consuming project's *final* executable / shared-library / dylib link. They hold flags — section stripping, undefined-symbol rejection, debug compression, fatal warnings — that would break a dependency's intermediate conftest or test-binary link if applied earlier. The chain mirrors the compile side: an OS-level `linux-bin` / `darwin-bin` carries the OS-wide final-link flags, and a leaf `*-arch-bin` layers any arch-specific final-link flags on top. The full rollup for `linux-amd64-bin` is `base → linux → linux-amd64 → linux-bin → linux-amd64-bin`.
 
 ## Toolchain & deployment floor
 
@@ -69,11 +69,9 @@ Compiler features activated or facilitated by these flags:
 
 ## Flag Profiles
 
-Profiles roll up: `linux-amd64` gets `base.txt`, then `linux.txt`, then `linux-amd64.txt`. The `*-bin` profile rolls up everything its non-`-bin` sibling does, plus its own file last (so `linux-amd64-bin` = `base.txt` + `linux.txt` + `linux-amd64.txt` + `linux-amd64-bin.txt`).
-
 ### Compile profiles
 
-Applied to every translation unit and every link in the dependency-build pipeline.
+Applied to every translation unit and every link in the dependency-build pipeline. Roll-up: e.g. `linux-amd64` = `base.txt` + `linux.txt` + `linux-amd64.txt`.
 
 | Profile | OS | Arch | Description |
 | --------- | ---- | ---- | -------- |
@@ -85,16 +83,18 @@ Applied to every translation unit and every link in the dependency-build pipelin
 | [darwin-amd64][5] | Darwin | amd64 | macOS Intel flags. |
 | [darwin-arm64][6] | Darwin | aarch64 | macOS M-series flags. |
 
-### Binary/leaf profiles
+### Binary profiles
 
-Applied **only** at the consuming project's final executable / shared-library / dylib link step. Holds flags that would break intermediate dependency-build links (autoconf conftests, BoringSSL test binaries, …).
+Applied **only** at the consuming project's final executable / shared-library / dylib link step. Holds flags that would break intermediate dependency-build links (autoconf conftests, BoringSSL test binaries, …). Roll-up: a `*-bin` profile inherits its compile-profile chain first, then adds the OS-wide `*-bin` layer, then the per-arch `*-arch-bin` layer. The full rollup for `linux-amd64-bin` is `base → linux → linux-amd64 → linux-bin → linux-amd64-bin`.
 
-| Profile | OS | Arch | Adds                                                                           |
-| ------- | ---- | ---- | ------------------------------------------------------------------------------ |
-| [linux-amd64-bin][11] | Linux  | amd64    | `--gc-sections`, `-z defs`, `--compress-debug-sections=zstd`, `--fatal-warnings` |
-| [linux-arm64-bin][12] | Linux  | aarch64  | Same as `linux-amd64-bin`                                                      |
-| [darwin-amd64-bin][13] | Darwin | amd64    | `-dead_strip`, `-dead_strip_dylibs`                                            |
-| [darwin-arm64-bin][14] | Darwin | aarch64  | Same as `darwin-amd64-bin`                                                     |
+| Profile | OS | Arch | Adds                                                                              |
+| ------- | ---- | ---- | --------------------------------------------------------------------------------- |
+| [linux-bin][15]        | Linux  | (All)    | `--gc-sections`, `-z defs`, `--compress-debug-sections=zstd`, `--fatal-warnings` |
+| [linux-amd64-bin][11]  | Linux  | amd64    | (placeholder for x86_64-only leaf-link flags)                                     |
+| [linux-arm64-bin][12]  | Linux  | aarch64  | (placeholder for aarch64-only leaf-link flags)                                    |
+| [darwin-bin][16]       | Darwin | (All)    | `-dead_strip`, `-dead_strip_dylibs`                                               |
+| [darwin-amd64-bin][13] | Darwin | amd64    | (placeholder for Intel-Mac-only leaf-link flags)                                  |
+| [darwin-arm64-bin][14] | Darwin | aarch64  | (placeholder for Apple-Silicon-only leaf-link flags)                              |
 
 > [!NOTE]
 > Windows is not covered here because we do not (yet) compile with `clang` on Windows.
@@ -121,3 +121,5 @@ So far, the following projects consume these flags:
 [12]: ./linux-arm64-bin.txt
 [13]: ./darwin-amd64-bin.txt
 [14]: ./darwin-arm64-bin.txt
+[15]: ./linux-bin.txt
+[16]: ./darwin-bin.txt
