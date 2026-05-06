@@ -79,9 +79,14 @@ jobs:
           "$CC" --version
           # Reject Apple's clang outright — it doesn't accept
           # -fuse-ld=lld and the live profile depends on lld.
-          "$CC" --version | grep -qiE 'apple|xcode' \
-            && { echo "BAD: \$CC resolves to Apple clang"; exit 1; } \
-            || true
+          # Match only the *version banner* (first line); the target
+          # triple printed below it always contains "apple-darwin"
+          # even on Homebrew clang and would false-positive a naive
+          # case-insensitive `apple` match.
+          if "$CC" --version | head -1 | grep -qi '^Apple clang'; then
+            echo "BAD: \$CC resolves to Apple clang"
+            exit 1
+          fi
           # Probe the linker driver for the lld variant clang would
           # pick under -fuse-ld=lld. On linux it's ld.lld, on darwin
           # ld64.lld. `--print-prog-name` returns the bare name when
