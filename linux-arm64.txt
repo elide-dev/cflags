@@ -20,13 +20,20 @@
 # zero cost on older.
 -mbranch-protection=standard
 
-# Tell the dynamic linker that this object/binary requires PROT_BTI on its
-# executable mappings. Without `-z force-bti` the BTI landing pads emitted
-# above are just NOPs; with it, the PT_GNU_PROPERTY note is generated and
-# the loader maps the text segment with PROT_BTI on capable kernels.
--Wl,-z,force-bti
-
-# Use PAC for the lazy-resolver PLT stubs (when present). With -fno-plt +
-# -z now in linux.txt the PLT is largely vestigial, but any remaining
-# stub gets pac-ret protection here.
--Wl,-z,pac-plt
+# NOTE on `-Wl,-z,force-bti` and `-Wl,-z,pac-plt`:
+# These are the linker-side enforcers that would mark the output binary as
+# requiring PROT_BTI / PAC at load time. They are intentionally NOT enabled
+# here because lld treats them as *strict*: it errors out (not warns) if
+# any input object lacks the corresponding GNU property note, and the
+# stock Ubuntu/glibc CRT objects (Scrt1.o, crti.o, crtn.o on noble-arm64
+# 24.04) ship without those notes — the link aborts with
+#
+#   ld.lld: error: /lib/aarch64-linux-gnu/Scrt1.o: -z force-bti: file
+#     does not have GNU_PROPERTY_AARCH64_FEATURE_1_BTI property
+#
+# We keep the codegen flag (`-mbranch-protection=standard` above) so our
+# own .o files emit the PAC/BTI sequences and per-object notes; lld then
+# combines those into the output's PT_GNU_PROPERTY only when *every*
+# input agrees. Re-enable the two `-z ...` flags once we link against a
+# CRT/libc that ships BTI/PAC notes (musl built with --enable-bti, or a
+# custom-built glibc 2.39+ with the property pass on).

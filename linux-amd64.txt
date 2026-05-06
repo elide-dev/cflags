@@ -39,18 +39,20 @@
 # Mirrors the Rust profile's -Ztune-cpu=znver3.
 -mtune=znver3
 
-# Intel CET — Indirect Branch Tracking + shadow stack. `=full` enables
-# both -mibt and -mshstk. Cheap on hardware that supports it (Tiger Lake+
-# / Zen 4+); silently transparent on older CPUs because the ENDBR64 prefix
-# decodes as a NOP, and the shadow stack is only consulted when the kernel
-# advertises CET support. Linux 5.18+ wires the userspace bits up via
-# arch_prctl. Pairs with the assembler emitting NT_GNU_PROPERTY_TYPE_0
-# notes so the loader can verify the binary opted in.
--fcf-protection=full
+# NOTE: -fcf-protection=full (Intel CET / IBT + SHSTK) is parked in
+# labs.disabled.txt while we prioritise startup time. Re-enable when the
+# linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+ and the
+# userspace runtime contract is ready to require CET support.
 
-# Emit per-basic-block sections so the linker can reorder/discard at finer
-# granularity than per-function. clang's `=all` form is gated to x86 ELF;
-# AArch64 clang on Alpine rejects `all` ('invalid value all') even though
-# it accepts `=labels`. Darwin's clang doesn't implement BB sections at
-# all. Pinning this to linux-amd64 avoids both failure modes.
+# Emit per-basic-block sections so a future Propeller pass can feed a
+# symbol-ordering file into the linker and reorder hot blocks across
+# function boundaries. Without that ordering file the linker keeps
+# blocks in source order and the flag is overhead, but the per-BB
+# sections are a prerequisite for Propeller, so we eat the cost now to
+# avoid a rebuild-the-world later.
+#
+# clang's `=all` form is gated to x86 ELF; AArch64 clang on Alpine
+# rejects `all` ('invalid value all') even though it accepts `=labels`.
+# Darwin's clang doesn't implement BB sections at all. Pinning this to
+# linux-amd64 avoids both failure modes.
 -fbasic-block-sections=all

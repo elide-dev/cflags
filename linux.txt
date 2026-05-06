@@ -44,26 +44,14 @@
 # PLT-stub gadget surface from the binary. Linux/ELF only.
 -fno-plt
 
-# Fortified-source level 2: replaces selected libc calls (str*, mem*,
-# sprintf family, read/write, …) with __*_chk variants that bounds-check
-# at runtime whenever the destination size is constant-foldable. We pin
-# at level 2 (not 3) because Linux/amd64 ships against musl, and musl
-# implements _FORTIFY_SOURCE through level 2 — level 3 depends on
-# glibc-only __*_chk_dyn variants for __builtin_dynamic_object_size and
-# fails to link against musl's libc.a. Glibc consumers can override to
-# =3 in a downstream profile if they wish.
--U_FORTIFY_SOURCE
--D_FORTIFY_SOURCE=2
-
-# libc++ hardened mode: turns on bounds checks for std::vector, std::span,
-# std::string_view, iterator validity, etc. We build our own libc++ on
-# linux-amd64, and the BoringSSL test binaries pick up the hardened
-# headers from there. The macro is a plain #define — when libc++ headers
-# aren't included on a given TU it's simply unused, so defining it
-# unconditionally on Linux is safe.
-# (-D_GLIBCXX_ASSERTIONS is intentionally absent: it's the libstdc++
-# analogue, and we don't ship libstdc++ on this platform.)
--D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+# NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
+# -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
+# labs.disabled.txt while we prioritise startup time. They will be
+# re-enabled once we have a perf bench harness that catches the per-
+# call cost of the fortified __*_chk variants and the libc++ iterator/
+# index checks on the str/mem and Netty I/O hot paths. Cut-and-paste
+# the *exact* spellings from labs.disabled.txt back here when
+# re-enabling.
 
 # Pass through to the LLVM backend and enable Polly, the polyhedral loop
 # optimizer. Performs high-level transformations (tiling, fusion, skewing,
@@ -109,7 +97,15 @@
 #                            functions whose address isn't taken. Doesn't drop sections,
 #                            so safe to apply at every link stage.
 #   --build-id=sha1        - embed a deterministic build ID for crash-server lookup.
-#   -O2                    - linker-side string/section optimization (small win, free).
+#   --hash-style=gnu       - use the gnu-hash dynamic-symbol hash format and drop
+#                            the legacy sysv-hash. Smaller .dynsym layout and
+#                            ~2x faster symbol lookup at load (gnu-hash is sized
+#                            for a Bloom-filter prefilter, which sysv-hash isn't).
+#                            Universally supported by every glibc and musl version
+#                            we target.
+#   -O3                    - linker-side string/section optimization. Bumped from
+#                            -O2 — pure link-time cost, smaller output, and the
+#                            smaller binary load is a small startup win.
 -Wl,-z,relro
 -Wl,-z,now
 -Wl,-z,noexecstack
@@ -118,4 +114,5 @@
 -Wl,--as-needed
 -Wl,--icf=safe
 -Wl,--build-id=sha1
--Wl,-O2
+-Wl,--hash-style=gnu
+-Wl,-O3

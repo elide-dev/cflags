@@ -2,20 +2,13 @@
 # targets darwin (darwin / darwin-amd64 / darwin-arm64 profiles).
 # Toolchain assumption: mainline LLVM clang 22 (not Apple-clang).
 
-# Glibc-style fortified-source equivalent. Apple's libc honors
-# _FORTIFY_SOURCE up to level 2 (level 3's __builtin_dynamic_object_size
-# fortification depends on glibc-only chk variants). Level 2 still
-# upgrades str*/mem*/sprintf into bounds-checked __*_chk forms when the
-# destination size is constant-foldable.
--U_FORTIFY_SOURCE
--D_FORTIFY_SOURCE=2
-
-# libc++ hardened mode: turns on bounds checks for std::vector, std::span,
-# std::string_view, iterator validity, etc. The "fast" mode keeps the
-# extension safety net cheap (mostly inlined comparisons) and matches what
-# we get from -D_GLIBCXX_ASSERTIONS on Linux. libc++ is the default C++
-# stdlib in Apple's SDK and the BoringSSL test binaries pick it up there.
--D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
+# NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
+# -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
+# labs.disabled.txt while we prioritise startup time across both
+# platforms. They will be re-enabled in lock-step with the Linux
+# profile once we have a perf bench that catches the per-call cost on
+# the str/mem/iterator hot paths. Cut-and-paste the *exact* spellings
+# from labs.disabled.txt back here when re-enabling.
 
 # Force LLD as the linker. Apple's ld64 / ld-prime is the system default,
 # but mainline clang-22 with ThinLTO produces bitcode archive members that

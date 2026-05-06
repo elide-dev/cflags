@@ -1,0 +1,132 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: probe (${{ matrix.target.os }}-${{ matrix.target.arch }})
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - { os: linux,  arch: amd64, runner: ubuntu-24.04 }
+          - { os: linux,  arch: arm64, runner: ubuntu-24.04-arm }
+          - { os: darwin, arch: arm64, runner: macos-14 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── toolchain ───────────────────────────────────────────────────
+      # The flag set assumes mainline clang-22 / lld-22 (zstd debug
+      # compression in lld, recent CET / PAC / BTI codegen, modern
+      # libc++ hardening macros, …). We install via apt.llvm.org's
+      # llvm.sh on Linux and Homebrew on macOS, then pin a stable name
+      # for the rest of the job via $CC and a /usr/local/bin symlink
+      # for ld.lld / ld64.lld.
+      - name: Install clang 22 (Linux)
+        if: matrix.target.os == 'linux'
+        run: |
+          set -eux
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          # `all` pulls clang + lld + libc++ + lldb + tools.
+          sudo /tmp/llvm.sh 22 all
+          sudo apt-get install -y --no-install-recommends libzstd-dev
+          # clang -fuse-ld=lld searches PATH for `ld.lld` (unversioned).
+          # Without the symlink it would fall back to the default ld and
+          # silently bypass our linker pinning.
+          sudo ln -sf /usr/bin/clang-22  /usr/local/bin/clang
+          sudo ln -sf /usr/bin/clang-22  /usr/local/bin/clang++
+          sudo ln -sf /usr/bin/ld.lld-22 /usr/local/bin/ld.lld
+          echo "CC=/usr/local/bin/clang"  >> "$GITHUB_ENV"
+          echo "CXX=/usr/local/bin/clang++" >> "$GITHUB_ENV"
+
+      - name: Install clang via Homebrew (macOS)
+        if: matrix.target.os == 'darwin'
+        run: |
+          set -eux
+          brew update
+          # On macOS, Homebrew's `llvm` formula intentionally does NOT
+          # ship lld (Apple's ld64 is the platform default and the
+          # llvm bottle stops at clang + libs). lld lives in its own
+          # `lld` formula. Install both, then symlink ld64.lld next
+          # to clang so `-fuse-ld=lld` resolves without us having to
+          # depend on PATH ordering inside clang's lookup.
+          brew install llvm lld zstd
+          llvm_prefix="$(brew --prefix llvm)"
+          lld_prefix="$(brew --prefix lld)"
+          test -x "$llvm_prefix/bin/clang"    || { echo "MISSING: $llvm_prefix/bin/clang";    ls -la "$llvm_prefix/bin" || true; exit 1; }
+          test -x "$lld_prefix/bin/ld64.lld"  || { echo "MISSING: $lld_prefix/bin/ld64.lld";  ls -la "$lld_prefix/bin"  || true; exit 1; }
+          ln -sf "$lld_prefix/bin/ld64.lld" "$llvm_prefix/bin/ld64.lld"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+          echo "CC=$llvm_prefix/bin/clang"    >> "$GITHUB_ENV"
+          echo "CXX=$llvm_prefix/bin/clang++" >> "$GITHUB_ENV"
+
+      - name: Toolchain sanity
+        run: |
+          set -eux
+          echo "PATH=$PATH"
+          echo "CC=$CC"
+          echo "which clang: $(command -v clang || true)"
+          "$CC" --version
+          # Reject Apple's clang outright — it doesn't accept
+          # -fuse-ld=lld and the live profile depends on lld.
+          # Match only the *version banner* (first line); the target
+          # triple printed below it always contains "apple-darwin"
+          # even on Homebrew clang and would false-positive a naive
+          # case-insensitive `apple` match.
+          if "$CC" --version | head -1 | grep -qi '^Apple clang'; then
+            echo "BAD: \$CC resolves to Apple clang"
+            exit 1
+          fi
+          # Probe the linker driver for the lld variant clang would
+          # pick under -fuse-ld=lld. On linux it's ld.lld, on darwin
+          # ld64.lld. `--print-prog-name` returns the bare name when
+          # not found, so a real path means lld is reachable.
+          "$CC" -fuse-ld=lld --print-prog-name=ld.lld   2>/dev/null || true
+          "$CC" -fuse-ld=lld --print-prog-name=ld64.lld 2>/dev/null || true
+          (command -v ld.lld   && ld.lld   --version) || true
+          (command -v ld64.lld && ld64.lld --version) || true
+
+      - uses: oven-sh/setup-bun@v2
+
+      # ── tests ───────────────────────────────────────────────────────
+      - name: Verify cflags.sh / cflags.ts emit identical output
+        run: |
+          set -eux
+          os=${{ matrix.target.os }}
+          arch=${{ matrix.target.arch }}
+          for mode in "" "--bin"; do
+            sh=$(bash ./cli/cflags.sh "$os" "$arch" $mode)
+            ts=$(bun run ./cli/cflags.ts "$os" "$arch" $mode)
+            if [ "$sh" != "$ts" ]; then
+              echo "parity mismatch (mode='${mode:-compile}')"
+              diff <(printf '%s\n' "$sh") <(printf '%s\n' "$ts")
+              exit 1
+            fi
+          done
+
+      - name: Compile probe with the compile profile
+        run: |
+          set -eux
+          CFLAGS=$(bash ./cli/cflags.sh ${{ matrix.target.os }} ${{ matrix.target.arch }})
+          echo "CC=$CC"
+          echo "CFLAGS:" $CFLAGS
+          "$CC" $CFLAGS -c tests/probe.c -o /tmp/probe.o
+
+      - name: Compile + link + run probe with the binary profile
+        run: |
+          set -eux
+          BFLAGS=$(bash ./cli/cflags.sh ${{ matrix.target.os }} ${{ matrix.target.arch }} --bin)
+          echo "CC=$CC"
+          echo "BFLAGS:" $BFLAGS
+          "$CC" $BFLAGS tests/probe.c -o /tmp/probe
+          /tmp/probe
