@@ -53,14 +53,11 @@
 # the *exact* spellings from labs.disabled.txt back here when
 # re-enabling.
 
-# Pass through to the LLVM backend and enable Polly, the polyhedral loop
-# optimizer. Performs high-level transformations (tiling, fusion, skewing,
-# auto-parallelization, improved vectorization) on affine loop nests by
-# modeling them as polyhedra. Requires a Clang built with Polly support
-# (the official LLVM clang-22 build does); gains are concentrated in
-# numeric/array-heavy code and are negligible or negative elsewhere.
--mllvm
--polly
+# NOTE: -mllvm -polly is parked in labs.disabled.txt — Alpine's clang22
+# package (the toolchain we use for production Linux static-archive
+# builds) is compiled without the Polly LLVM plugin and rejects the flag
+# with "Unknown command line argument '-polly'". Re-enable here once the
+# Linux toolchain consistently ships a Polly-enabled clang.
 
 # Mark assembler-produced objects as not requiring an executable stack.
 # Without this, a single .s/.S input lacking a .note.GNU-stack section

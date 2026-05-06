@@ -43,6 +43,19 @@
 # alongside _FORTIFY_SOURCE above.
 -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
 #
+# Pass through to the LLVM backend and enable Polly, the polyhedral loop
+# optimizer. Performs high-level transformations (tiling, fusion, skewing,
+# auto-parallelization, improved vectorization) on affine loop nests by
+# modeling them as polyhedra. Requires a Clang built with Polly support;
+# Alpine's `clang22` package (the toolchain we use for production Linux
+# static-archive builds) is compiled WITHOUT Polly and rejects the flag
+# with "Unknown command line argument '-polly'". Re-enable when the
+# Linux toolchain consistently ships a Polly-enabled clang. Gains are
+# concentrated in numeric/array-heavy code; negligible or negative
+# elsewhere.
+-mllvm
+-polly
+#
 # ── from linux-amd64.txt ─────────────────────────────────────────────
 #
 # Intel CET: Indirect Branch Tracking (IBT) + shadow stack (SHSTK).
