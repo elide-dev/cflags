@@ -53,13 +53,20 @@ Compiler features activated or facilitated by these flags:
 ### Phasing in
 
 Some hardening flags are temporarily disabled in the live profiles to
-prioritise startup time. They are tracked in [`labs.disabled.txt`][19]
-with a re-enable plan per flag. Currently parked:
-`-fstack-protector-strong`, `-fzero-call-used-regs=used-gpr`,
-`-fcf-protection=full`, `-D_FORTIFY_SOURCE=2`,
-`-D_LIBCPP_HARDENING_MODE_FAST`. The file is **not** consumed by the
-rollup or by `cli/cflags.{sh,ts}` — it is a parking lot, not a
-profile.
+prioritise startup time. They are tracked verbatim in
+[`labs.disabled.txt`][19] with a re-enable plan per flag. Currently
+parked, with the exact spelling needed when cut-and-pasting back into
+the live profile:
+
+- `-fstack-protector-strong`
+- `-fzero-call-used-regs=used-gpr`
+- `-fcf-protection=full`
+- `-U_FORTIFY_SOURCE`
+- `-D_FORTIFY_SOURCE=2`
+- `-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST`
+
+The file is **not** consumed by the rollup or by `cli/cflags.{sh,ts}`
+— it is a parking lot, not a profile.
 
 > [!IMPORTANT]
 > **Section-stripping and similar "no further link" flags live in `*-bin`,
@@ -141,6 +148,18 @@ export LDFLAGS="$(./cli/cflags.sh --bin)"
 export CFLAGS="$(bun run ./cli/cflags.ts linux arm64)"
 export LDFLAGS="$(bun run ./cli/cflags.ts linux arm64 --bin)"
 ```
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR; it resolves the flag set with both `cli/cflags.sh` and `cli/cflags.ts`, asserts they emit byte-identical output, and then compiles + links the [`tests/probe.c`](./tests/probe.c) translation unit against the full compile and binary profiles for every supported target. The matrix covers:
+
+| Target | GitHub runner |
+| ------ | ------------- |
+| `linux-amd64`  | `ubuntu-24.04` |
+| `linux-arm64`  | `ubuntu-24.04-arm` |
+| `darwin-arm64` | `macos-14` |
+
+(`darwin-amd64` is not covered: GitHub no longer offers an Intel-Mac runner. The profile is exercised locally before tagged releases.)
 
 ## Downstream Projects
 

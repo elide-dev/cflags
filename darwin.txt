@@ -2,11 +2,13 @@
 # targets darwin (darwin / darwin-amd64 / darwin-arm64 profiles).
 # Toolchain assumption: mainline LLVM clang 22 (not Apple-clang).
 
-# NOTE: -D_FORTIFY_SOURCE=2 and -D_LIBCPP_HARDENING_MODE_FAST are parked
-# in labs.disabled.txt while we prioritise startup time across both
+# NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
+# -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
+# labs.disabled.txt while we prioritise startup time across both
 # platforms. They will be re-enabled in lock-step with the Linux
 # profile once we have a perf bench that catches the per-call cost on
-# the str/mem/iterator hot paths.
+# the str/mem/iterator hot paths. Cut-and-paste the *exact* spellings
+# from labs.disabled.txt back here when re-enabling.
 
 # Force LLD as the linker. Apple's ld64 / ld-prime is the system default,
 # but mainline clang-22 with ThinLTO produces bitcode archive members that

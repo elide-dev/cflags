@@ -44,11 +44,14 @@
 # PLT-stub gadget surface from the binary. Linux/ELF only.
 -fno-plt
 
-# NOTE: -D_FORTIFY_SOURCE=2 and -D_LIBCPP_HARDENING_MODE_FAST are parked
-# in labs.disabled.txt while we prioritise startup time. They will be
+# NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
+# -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
+# labs.disabled.txt while we prioritise startup time. They will be
 # re-enabled once we have a perf bench harness that catches the per-
 # call cost of the fortified __*_chk variants and the libc++ iterator/
-# index checks on the str/mem and Netty I/O hot paths.
+# index checks on the str/mem and Netty I/O hot paths. Cut-and-paste
+# the *exact* spellings from labs.disabled.txt back here when
+# re-enabling.
 
 # Pass through to the LLVM backend and enable Polly, the polyhedral loop
 # optimizer. Performs high-level transformations (tiling, fusion, skewing,
