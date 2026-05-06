@@ -56,21 +56,37 @@ jobs:
           brew update
           brew install llvm zstd
           prefix="$(brew --prefix llvm)"
-          # Prepend brew's llvm bin to PATH so the rest of the job
-          # picks up `clang` and `ld64.lld` (-fuse-ld=lld) from it
-          # instead of Apple's clang from Xcode.
+          # Hard-assert that brew installed what we need before the
+          # rest of the job tries to use it. Without these the failure
+          # surfaces later as `clang: invalid linker name in argument
+          # '-fuse-ld=lld'`, which is Apple-clang's signature for "lld
+          # is unknown to me" and means the wrong clang got picked up.
+          test -x "$prefix/bin/clang"     || { echo "MISSING: $prefix/bin/clang";     ls -la "$prefix/bin" || true; exit 1; }
+          test -x "$prefix/bin/ld64.lld"  || { echo "MISSING: $prefix/bin/ld64.lld";  ls -la "$prefix/bin" || true; exit 1; }
           echo "$prefix/bin" >> "$GITHUB_PATH"
-          echo "CC=$prefix/bin/clang"  >> "$GITHUB_ENV"
+          echo "CC=$prefix/bin/clang"    >> "$GITHUB_ENV"
           echo "CXX=$prefix/bin/clang++" >> "$GITHUB_ENV"
 
       - name: Toolchain sanity
         run: |
           set -eux
-          which clang
-          clang --version
-          # ld.lld is the linux name; ld64.lld is the mach-o name.
-          (which ld.lld   && ld.lld   --version) || true
-          (which ld64.lld && ld64.lld --version) || true
+          echo "PATH=$PATH"
+          echo "CC=$CC"
+          echo "which clang: $(command -v clang || true)"
+          "$CC" --version
+          # Reject Apple's clang outright — it doesn't accept
+          # -fuse-ld=lld and the live profile depends on lld.
+          "$CC" --version | grep -qiE 'apple|xcode' \
+            && { echo "BAD: \$CC resolves to Apple clang"; exit 1; } \
+            || true
+          # Probe the linker driver for the lld variant clang would
+          # pick under -fuse-ld=lld. On linux it's ld.lld, on darwin
+          # ld64.lld. `--print-prog-name` returns the bare name when
+          # not found, so a real path means lld is reachable.
+          "$CC" -fuse-ld=lld --print-prog-name=ld.lld   2>/dev/null || true
+          "$CC" -fuse-ld=lld --print-prog-name=ld64.lld 2>/dev/null || true
+          (command -v ld.lld   && ld.lld   --version) || true
+          (command -v ld64.lld && ld64.lld --version) || true
 
       - uses: oven-sh/setup-bun@v2
 
