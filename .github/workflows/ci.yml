@@ -54,18 +54,21 @@ jobs:
         run: |
           set -eux
           brew update
-          brew install llvm zstd
-          prefix="$(brew --prefix llvm)"
-          # Hard-assert that brew installed what we need before the
-          # rest of the job tries to use it. Without these the failure
-          # surfaces later as `clang: invalid linker name in argument
-          # '-fuse-ld=lld'`, which is Apple-clang's signature for "lld
-          # is unknown to me" and means the wrong clang got picked up.
-          test -x "$prefix/bin/clang"     || { echo "MISSING: $prefix/bin/clang";     ls -la "$prefix/bin" || true; exit 1; }
-          test -x "$prefix/bin/ld64.lld"  || { echo "MISSING: $prefix/bin/ld64.lld";  ls -la "$prefix/bin" || true; exit 1; }
-          echo "$prefix/bin" >> "$GITHUB_PATH"
-          echo "CC=$prefix/bin/clang"    >> "$GITHUB_ENV"
-          echo "CXX=$prefix/bin/clang++" >> "$GITHUB_ENV"
+          # On macOS, Homebrew's `llvm` formula intentionally does NOT
+          # ship lld (Apple's ld64 is the platform default and the
+          # llvm bottle stops at clang + libs). lld lives in its own
+          # `lld` formula. Install both, then symlink ld64.lld next
+          # to clang so `-fuse-ld=lld` resolves without us having to
+          # depend on PATH ordering inside clang's lookup.
+          brew install llvm lld zstd
+          llvm_prefix="$(brew --prefix llvm)"
+          lld_prefix="$(brew --prefix lld)"
+          test -x "$llvm_prefix/bin/clang"    || { echo "MISSING: $llvm_prefix/bin/clang";    ls -la "$llvm_prefix/bin" || true; exit 1; }
+          test -x "$lld_prefix/bin/ld64.lld"  || { echo "MISSING: $lld_prefix/bin/ld64.lld";  ls -la "$lld_prefix/bin"  || true; exit 1; }
+          ln -sf "$lld_prefix/bin/ld64.lld" "$llvm_prefix/bin/ld64.lld"
+          echo "$llvm_prefix/bin" >> "$GITHUB_PATH"
+          echo "CC=$llvm_prefix/bin/clang"    >> "$GITHUB_ENV"
+          echo "CXX=$llvm_prefix/bin/clang++" >> "$GITHUB_ENV"
 
       - name: Toolchain sanity
         run: |
