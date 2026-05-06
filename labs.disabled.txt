@@ -65,6 +65,28 @@
 # and the userspace runtime contract is ready to require CET support.
 -fcf-protection=full
 #
+# Skip the dynamic-symbol interposition contract for own-DSO defs and
+# remove the lazy-binding PLT for external calls. Together they let
+# clang resolve intra-DSO calls/constants with PC-relative addressing
+# (-fno-semantic-interposition) and route external calls through a
+# read-only GOT (-fno-plt + -Wl,-z,now). Net effect on Linux: smaller
+# code, faster cold start, no writable PLT-stub gadget surface.
+#
+# Incompatible with our NETTY_JNI_ALIAS pattern: the macro emits the
+# `Java_<class>_<method>` entry symbols as `__attribute__((alias,
+# visibility("default")))`. Under -fno-semantic-interposition the
+# compiler treats them as protected-equivalent and addresses them with
+# `adrp+add` PC-relative, but ld.lld (correctly) sees their declared
+# default visibility and refuses the relocation:
+#   ld.lld: error: relocation R_AARCH64_ADR_PREL_PG_HI21 cannot be used
+#   against symbol 'Java_io_netty_channel_unix_Socket_recvFrom';
+#   recompile with -fPIC
+# Re-enable only if NETTY_JNI_ALIAS moves to STV_PROTECTED (which keeps
+# dlsym discoverability while marking the alias non-interposable) or we
+# stop emitting default-visibility JNI aliases altogether.
+-fno-semantic-interposition
+-fno-plt
+#
 # Per-basic-block sections — prerequisite for a Propeller-style
 # symbol-ordering pass at the consumer's final link, where hot blocks
 # get reordered across function boundaries to shrink the icache

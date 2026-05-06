@@ -27,22 +27,16 @@
 # darwin: cmake build aborts. Linux only.
 -fexperimental-relative-c++-abi-vtables
 
-# Skip the dynamic-symbol interposition contract for our own definitions:
-# under ELF the linker assumes any global symbol in a shared library can
-# be replaced via LD_PRELOAD, which forces every intra-library call through
-# the GOT/PLT and disables a wide range of inlining + IPO. Disabling it
-# lets clang resolve calls and constants directly inside the same DSO.
-# Combined with -fno-plt below, the call-site overhead approaches a static
-# build's. Linux/ELF only — Mach-O has different visibility semantics and
-# clang ignores this flag there.
--fno-semantic-interposition
-
-# Skip the PLT for external calls and route them through GOT loads instead.
-# Pairs with -Wl,-z,now (full RELRO): the GOT is resolved at load time and
-# made read-only, so removing the lazy-binding PLT shrinks code size,
-# eliminates a layer of indirection on hot calls, and removes the writable
-# PLT-stub gadget surface from the binary. Linux/ELF only.
--fno-plt
+# NOTE: -fno-semantic-interposition and -fno-plt are parked in
+# labs.disabled.txt — both are incompatible with default-visibility
+# `Java_*` aliases that JNI exports require. The compiler treats own-DSO
+# default-visibility symbols as PC-rel-addressable under
+# -fno-semantic-interposition, and the aarch64 linker (ld.lld) then
+# rejects the resulting `R_AARCH64_ADR_PREL_PG_HI21` relocation against
+# the alias with "cannot be used against symbol 'Java_…'; recompile with
+# -fPIC". Re-enable only if we move JNI exports to STV_PROTECTED (which
+# would need a coordinated change to NETTY_JNI_ALIAS) or stop emitting
+# default-visibility aliases altogether.
 
 # NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
 # -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
