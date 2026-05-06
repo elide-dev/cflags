@@ -64,3 +64,14 @@
 # when the linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+
 # and the userspace runtime contract is ready to require CET support.
 -fcf-protection=full
+#
+# Per-basic-block sections — prerequisite for a Propeller-style
+# symbol-ordering pass at the consumer's final link, where hot blocks
+# get reordered across function boundaries to shrink the icache
+# working set. Without the ordering file the flag is pure overhead
+# (codesize growth + per-block section relocations), so we keep it
+# disabled until Propeller is actually wired into the linux-amd64
+# pipeline. clang's `=all` form is x86 ELF only — AArch64 clang
+# rejects `all`, darwin clang doesn't implement BB sections — so when
+# re-enabled it belongs in linux-amd64.txt, not linux.txt.
+-fbasic-block-sections=all

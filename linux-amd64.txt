@@ -44,15 +44,11 @@
 # linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+ and the
 # userspace runtime contract is ready to require CET support.
 
-# Emit per-basic-block sections so a future Propeller pass can feed a
-# symbol-ordering file into the linker and reorder hot blocks across
-# function boundaries. Without that ordering file the linker keeps
-# blocks in source order and the flag is overhead, but the per-BB
-# sections are a prerequisite for Propeller, so we eat the cost now to
-# avoid a rebuild-the-world later.
-#
-# clang's `=all` form is gated to x86 ELF; AArch64 clang on Alpine
-# rejects `all` ('invalid value all') even though it accepts `=labels`.
-# Darwin's clang doesn't implement BB sections at all. Pinning this to
-# linux-amd64 avoids both failure modes.
--fbasic-block-sections=all
+# NOTE: -fbasic-block-sections=all is parked in labs.disabled.txt.
+# Per-BB sections only pay off when paired with a Propeller-style
+# symbol-ordering file at the consumer's final link; without that the
+# flag is pure overhead (codesize growth + per-block section relocation
+# noise). Re-enable here once we are sure we ship Propeller in the
+# linux-amd64 pipeline. The flag is x86-ELF-only — AArch64 clang rejects
+# `=all` and darwin clang doesn't implement BB sections — so it stays
+# scoped to linux-amd64 when re-enabled.
