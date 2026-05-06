@@ -115,7 +115,10 @@
 #   Memory and bounds:
 #     Wnull-dereference            - flag paths that may deref a known-null pointer.
 #     Warray-bounds                - out-of-bounds index detection.
-#     Wstack-usage=1000000         - warn on any function whose frame exceeds 1 MB.
+#     Wframe-larger-than=1000000   - warn on any function whose stack frame exceeds 1 MB.
+#                                    clang's analogue of GCC's -Wstack-usage=N (clang
+#                                    rejects -Wstack-usage with "unknown warning option"
+#                                    even on mainline clang 22).
 #
 #   Stack/control-flow surface:
 #     Wstack-protector             - warn when a canary was requested but couldn't be inserted.
@@ -158,4 +161,4 @@
 -Wstrict-overflow
 -Wswitch-default
 -Wswitch-enum
--Wstack-usage=1000000
+-Wframe-larger-than=1000000
