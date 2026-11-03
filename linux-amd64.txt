@@ -6,7 +6,7 @@
 # Layered cryptographic extensions (matched to our Rust profile, which
 # uses -Ctarget-cpu=x86-64-v3 -Ztune-cpu=znver3 -Ctarget-feature=+aes,+rdrand):
 #
-#   -maes      AES-NI: AESENC/AESDEC/AESKEYGEN — the BoringSSL hot path
+#   -maes      AES-NI: AESENC/AESDEC/AESKEYGEN — a cryptographic hot path
 #              for AES-{CBC,CTR,GCM}. Available on Westmere+/Bulldozer+,
 #              so it's effectively universal at the v3 floor anyway.
 #   -mpclmul   PCLMULQDQ: carry-less multiply, the hot instruction for
@@ -14,7 +14,7 @@
 #   -msha      SHA-NI: hardware SHA-1/SHA-256 round instructions. Floor
 #              moves to Goldmont/Cannon Lake+ on Intel and Zen 1+ on AMD;
 #              Skylake/Kaby/Coffee/Comet desktop chips do NOT have it.
-#              We accept that floor for the BoringSSL TLS handshake win.
+#              We accept that floor for cryptographic workloads.
 #   -mvaes     Vector AES (256/512-bit AES rounds across YMM/ZMM lanes).
 #              Floor: Ice Lake server / Tiger Lake / Alder Lake on Intel,
 #              Zen 3+ on AMD.
@@ -23,8 +23,8 @@
 #   -mrdrnd    Hardware RNG via RDRAND. Available since Ivy Bridge / Zen 1.
 #
 # Effective deployment floor with this set: Ice Lake server (2019) /
-# Zen 3 (2020) or newer. If a downstream target needs to support
-# Cascade Lake or pre-Zen-3 EPYC, drop -mvaes -mgfni in an override.
+# Zen 4 (2022) or newer (GFNI excludes Zen 3). For Zen 3, drop -mgfni;
+# older targets require auditing the entire extension list.
 -march=x86-64-v3
 -maes
 -mpclmul

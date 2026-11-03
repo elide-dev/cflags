@@ -6,7 +6,7 @@ Flag files allow comments which start with `#`. Comments are thus inline explain
 
 There are two classes of profile:
 
-- **Compile profiles** (`base`, `linux`, `darwin`, `linux-amd64`, …) apply to *every* translation unit and link stage in the dependency-build pipeline (Netty C, BoringSSL, autoconf conftests, …). Anything here must be safe at intermediate link stages.
+- **Compile profiles** (`base`, `linux`, `darwin`, `linux-amd64`, …) apply to *every* translation unit and link stage in the dependency-build pipeline (bundled libraries, configure probes, …). Anything here must be safe at intermediate link stages.
 - **Binary profiles** (`*-bin`) apply only at the consuming project's *final* executable / shared-library / dylib link. They hold flags — section stripping, undefined-symbol rejection, debug compression, fatal warnings — that would break a dependency's intermediate conftest or test-binary link if applied earlier. The chain mirrors the compile side: an OS-level `linux-bin` / `darwin-bin` carries the OS-wide final-link flags, and a leaf `*-arch-bin` layers any arch-specific final-link flags on top. The full rollup for `linux-amd64-bin` is `base → linux → linux-amd64 → linux-bin → linux-amd64-bin`.
 
 ## Toolchain & deployment floor
@@ -16,15 +16,48 @@ or override per-profile.
 
 | Layer                       | Floor                                                                    |
 | --------------------------- | ------------------------------------------------------------------------ |
-| Compiler                    | mainline LLVM **clang 22.x** (Polly-enabled), on every platform          |
-| Linker                      | **lld** (`ld.lld` on Linux, `ld64.lld` on Darwin)                        |
-| Linux libc                  | **musl 1.2.x** primary; **glibc 2.36+** for any glibc consumers          |
+| Compiler                    | mainline LLVM **clang 23.1.4**, on every platform          |
+| Linker                      | **lld 23.1.4** (`ld.lld` on Linux, `ld64.lld` on Darwin)                        |
+| Linux libc                  | **musl 1.2.4+** primary; **glibc 2.36+** for any glibc consumers          |
 | Linux libc++                | Vendored libc++ (Linux/amd64); `_LIBCPP_HARDENING_MODE` honored          |
 | macOS                       | macOS 12+ (dyld 4 / chained-fixups format)                               |
-| Linux/amd64 ISA             | `x86-64-v3` + `aes`/`pclmul`/`sha`/`vaes`/`gfni`/`rdrand` → Ice Lake / Zen 3+ |
-| Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → Haswell+ (2013); covers every Intel Mac supported by macOS 12+ |
+| Linux/amd64 ISA             | `x86-64-v3` + `aes`/`pclmul`/`sha`/`vaes`/`gfni`/`rdrand` → Ice Lake / Zen 4+ |
+| Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → Haswell+ (2013); verify CPU support independently of macOS version |
 | Linux/arm64 ISA             | `armv8.2-a` + `crypto`/`crc`/`dotprod` → Graviton 2+, Neoverse N1+, Altra |
 | Darwin/arm64 ISA            | `apple-m1` (ARMv8.5-A) — every shipping Apple Silicon Mac                |
+
+## LLVM 23.1.4 review
+
+Keep ThinLTO, `-O3`, unwind information, the current ISA flags, and the
+compile/final-link profile split. The LLVM upgrade alone does not justify
+raising the deployment CPU floor or enabling experimental optimizations.
+
+The shared baseline now uses `-fPIC` alone. A trailing `-fPIE` overrides it
+and can make archive members fail to link into shared libraries. Consumers
+must select `-pie` for PIE executables or `-shared` / `-dynamiclib` for libraries;
+`--bin` supports both output kinds and cannot select one automatically.
+
+Relative C++ vtables and aggressive constant merging are now opt-in in
+`labs.disabled.txt`. Rebuild all downstream archives when adopting this
+change, especially C++ objects: mixing old relative-vtable objects with the
+normal C++ ABI is unsafe. `-Wstrict-overflow` was removed because it is a
+[Clang compatibility no-op](https://releases.llvm.org/23.1.0/tools/clang/docs/DiagnosticsReference.html#wstrict-overflow).
+ELF linker optimization uses the documented `-O2` tier; compiler `-O3` and
+ThinLTO optimization are separate settings.
+
+Next experiments should measure toolchain startup and representative downstream
+workloads (including bundled SQLite): test the parked interposition/PLT flags
+independently after fixing PIC and auditing symbol replacement requirements;
+compare `-O2`/`-O3` and profile-guided optimization; evaluate stack canaries
+and libc++ hardening separately. Polly remains build-dependent. Do not infer
+that a shared LLVM version supplies Polly or makes experimental ABIs safe.
+The current smoke matrix does not validate musl/static PIE, the oldest
+supported CPUs, or downstream application performance.
+
+References: [Clang 23 release notes](https://releases.llvm.org/23.1.0/tools/clang/docs/ReleaseNotes.html),
+[LLD 23 release notes](https://releases.llvm.org/23.1.0/tools/lld/docs/ReleaseNotes.html),
+[LLD 23.1.4 options](https://github.com/llvm/llvm-project/blob/llvmorg-23.1.4/lld/docs/ld.lld.1),
+and [musl 1.2.4 RELR support](https://www.openwall.com/lists/musl/2023/05/02/1).
 
 ## Features
 
@@ -34,30 +67,30 @@ Compiler features activated or facilitated by these flags:
 | ----------------------------- | ------------- | ----------------------------------------------------------------- |
 | [Thin LTO][9]                 | All           | Emits and optimizes as LLVM bitcode, program-wide                 |
 | Function/Data Sections        | All           | `-f{data,function}-sections` (collected at *final* link, see below) |
-| Constant merging              | All           | `-fmerge-all-constants` for smaller binary + fewer relocs at load |
 | Stack Hardening               | Linux         | `-fstack-clash-protection` (canaries are parked, see "Phasing in") |
 | Async Unwind Tables           | All           | `-fasynchronous-unwind-tables` for profilers + crash collectors   |
 | [LLD][10] as linker           | All           | `-fuse-ld=lld` required for Thin LTO                              |
-| Full RELRO + `-fno-plt`       | Linux         | `-z relro -z now` plus PLT-less call lowering                     |
-| No semantic interposition     | Linux         | `-fno-semantic-interposition` for intra-DSO inlining              |
+| Full RELRO       | Linux         | `-z relro -z now` for eager binding and read-only relocation tables                     |
 | DT_RELR relative relocations  | Linux         | `-z pack-relative-relocs` shrinks PIE relocation tables           |
 | LLD ICF (safe)                | Linux         | `--icf=safe` folds identical address-not-taken functions          |
 | GNU-hash dyn-symbol table     | Linux         | `--hash-style=gnu` (smaller, ~2× faster lookup at load)           |
-| LLD link optimization         | Linux         | `-Wl,-O3` aggressive string/section merging at link time          |
-| Relative C++ ABI vtables      | Linux         | Enables relative vtable references program-wide                   |
-| Propeller-ready BB sections   | Linux amd64   | `-fbasic-block-sections=all` (awaiting symbol-ordering file)      |
+| LLD link optimization         | Linux         | `-Wl,-O2` string tail merging and branch-to-branch optimization          |
 | Microarch tuning              | Linux amd64   | `-mtune=znver3` (mirrors Rust `-Ztune-cpu=znver3`)                |
-| PAC + BTI                     | arm64 (both)  | `-mbranch-protection=standard`; `-z force-bti` on Linux           |
+| PAC + BTI                     | arm64 (both)  | `-mbranch-protection=standard`; runtime enforcement depends on platform and inputs           |
 | Mach-O fixup chains           | Darwin        | `-bind_at_load`, `-fixup_chains`, `-no_data_in_code_info`         |
 
 ### Phasing in
 
-Some hardening flags are temporarily disabled in the live profiles to
-prioritise startup time. They are tracked verbatim in
+Some flags are disabled pending ABI, toolchain, or performance validation. They are tracked verbatim in
 [`labs.disabled.txt`][19] with a re-enable plan per flag. Currently
 parked, with the exact spelling needed when cut-and-pasting back into
 the live profile:
 
+- `-fmerge-all-constants` (object-identity semantics)
+- `-fexperimental-relative-c++-abi-vtables` (requires a coordinated C++ ABI)
+- `-fno-semantic-interposition` and `-fno-plt` (audit interposition needs and benchmark independently)
+- `-mllvm -polly` (requires a Polly-enabled build and measured benefit)
+- `-fbasic-block-sections=all` (requires a profile-driven layout pipeline)
 - `-fstack-protector-strong`
 - `-fzero-call-used-regs=used-gpr`
 - `-fcf-protection=full`
@@ -71,8 +104,8 @@ The file is **not** consumed by the rollup or by `cli/cflags.{sh,ts}`
 > [!IMPORTANT]
 > **Section-stripping and similar "no further link" flags live in `*-bin`,
 > not in the per-OS or per-arch compile profiles.** The compile profiles
-> are applied to dependency builds (Netty, BoringSSL TCNative, autoconf
-> conftests, …) where intermediate links still reference symbols that
+> are applied to dependency builds (bundled third-party libraries, configure
+> probes, …) where intermediate links still reference symbols that
 > `-Wl,--gc-sections` / `-Wl,-dead_strip` would otherwise drop. The
 > compiler still emits per-function/data sections via
 > `-ffunction-sections` / `-fdata-sections`, so the consuming project
@@ -80,9 +113,8 @@ The file is **not** consumed by the rollup or by `cli/cflags.{sh,ts}`
 > profile (e.g. `linux-amd64-bin`) at its **own** final link step.
 
 > [!NOTE]
-> `-Wconversion` is intentionally not enabled — it's too noisy across Netty's
-> JNI glue and BoringSSL's x86 intrinsics to be useful as a blanket warning.
-> Re-enable selectively per-target if needed.
+> Enable `-Wconversion` selectively for owned targets after auditing diagnostics.
+> Bundled third-party libraries may need a different warning policy.
 
 ## Flag Profiles
 
@@ -102,7 +134,7 @@ Applied to every translation unit and every link in the dependency-build pipelin
 
 ### Binary profiles
 
-Applied **only** at the consuming project's final executable / shared-library / dylib link step. Holds flags that would break intermediate dependency-build links (autoconf conftests, BoringSSL test binaries, …). Roll-up: a `*-bin` profile inherits its compile-profile chain first, then adds the OS-wide `*-bin` layer, then the per-arch `*-arch-bin` layer. The full rollup for `linux-amd64-bin` is `base → linux → linux-amd64 → linux-bin → linux-amd64-bin`.
+Applied **only** at the consuming project's final executable / shared-library / dylib link step. Holds flags that would break intermediate dependency-build links (configure probes, dependency test binaries, …). Roll-up: a `*-bin` profile inherits its compile-profile chain first, then adds the OS-wide `*-bin` layer, then the per-arch `*-arch-bin` layer. The full rollup for `linux-amd64-bin` is `base → linux → linux-amd64 → linux-bin → linux-amd64-bin`.
 
 | Profile | OS | Arch | Adds                                                                              |
 | ------- | ---- | ---- | --------------------------------------------------------------------------------- |
@@ -151,7 +183,7 @@ export LDFLAGS="$(bun run ./cli/cflags.ts linux arm64 --bin)"
 
 ## CI
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR; it resolves the flag set with both `cli/cflags.sh` and `cli/cflags.ts`, asserts they emit byte-identical output, and then compiles + links the [`tests/probe.c`](./tests/probe.c) translation unit against the full compile and binary profiles for every supported target. The matrix covers:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and PR using checksum-pinned LLVM 23.1.4 release archives; it verifies both compiler and linker versions, resolves the flag set with both `cli/cflags.sh` and `cli/cflags.ts`, asserts they emit byte-identical output, and then compiles + links the [`tests/probe.c`](./tests/probe.c) translation unit against the full compile and binary profiles for the targets below. It also runs a C++ runtime virtual-call probe and links separately compiled objects into a shared library. The matrix covers:
 
 | Target | GitHub runner |
 | ------ | ------------- |
@@ -163,10 +195,9 @@ export LDFLAGS="$(bun run ./cli/cflags.ts linux arm64 --bin)"
 
 ## Downstream Projects
 
-So far, the following projects consume these flags:
-
-- [Netty][7] (`epoll`, `kqueue`, `io_uring`, etc.)
-- [Netty TCNative][8] (BoringSSL-based TLS)
+These profiles are consumed by Elide's own toolchain and downstream projects,
+including bundled third-party libraries such as SQLite. Netty and TCNative
+no longer consume them; their former JNI build define has been removed.
 
 [0]: ./base.txt
 [1]: ./linux.txt
@@ -175,8 +206,6 @@ So far, the following projects consume these flags:
 [4]: ./darwin.txt
 [5]: ./darwin-amd64.txt
 [6]: ./darwin-arm64.txt
-[7]: https://github.com/elide-dev/netty
-[8]: https://github.com/elide-dev/netty-tcnative
 [9]: https://clang.llvm.org/docs/ThinLTO.html
 [10]: https://lld.llvm.org/
 [11]: ./linux-amd64-bin.txt

@@ -3,8 +3,8 @@
 # Target ISA baseline: ARMv8.2-A with crypto + CRC. Matches the "server
 # arm64" floor (Neoverse N1, Graviton 2+, Ampere Altra) without requiring
 # Neoverse-V1-only features like SVE. Pulls in dotprod (helpful for
-# BoringSSL's vectorized GHASH/Poly1305), the FP16 ops, and the AES /
-# SHA-1 / SHA-2 / PMULL instruction families used heavily in BoringSSL.
+# vectorized integer workloads), the FP16 ops, and the AES /
+# SHA-1 / SHA-2 / PMULL instruction families used by cryptographic libraries.
 -march=armv8.2-a+crypto+crc+dotprod
 
 # Pointer Authentication + Branch Target Identification. `standard` is the
@@ -17,23 +17,11 @@
 #                 indirect branches into non-landing-pad bytes trap.
 # Backwards-compatible: PAC instructions are HINT-space NOPs on pre-v8.3
 # hardware, BTI lands in HINT space too. Net: hardening on modern silicon,
-# zero cost on older.
+# compatible execution on older hardware; measure any overhead.
 -mbranch-protection=standard
 
-# NOTE on `-Wl,-z,force-bti` and `-Wl,-z,pac-plt`:
-# These are the linker-side enforcers that would mark the output binary as
-# requiring PROT_BTI / PAC at load time. They are intentionally NOT enabled
-# here because lld treats them as *strict*: it errors out (not warns) if
-# any input object lacks the corresponding GNU property note, and the
-# stock Ubuntu/glibc CRT objects (Scrt1.o, crti.o, crtn.o on noble-arm64
-# 24.04) ship without those notes — the link aborts with
-#
-#   ld.lld: error: /lib/aarch64-linux-gnu/Scrt1.o: -z force-bti: file
-#     does not have GNU_PROPERTY_AARCH64_FEATURE_1_BTI property
-#
-# We keep the codegen flag (`-mbranch-protection=standard` above) so our
-# own .o files emit the PAC/BTI sequences and per-object notes; lld then
-# combines those into the output's PT_GNU_PROPERTY only when *every*
-# input agrees. Re-enable the two `-z ...` flags once we link against a
-# CRT/libc that ships BTI/PAC notes (musl built with --enable-bti, or a
-# custom-built glibc 2.39+ with the property pass on).
+# Linker-side -z force-bti / -z pac-plt remain disabled. BTI enforcement
+# requires compatible runtime and assembly inputs as well as compiler
+# instrumentation. Missing property notes can produce linker diagnostics
+# (fatal under --fatal-warnings); forcing an output property alone cannot
+# make uninstrumented indirect-branch targets safe.

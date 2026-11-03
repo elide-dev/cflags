@@ -4,5 +4,5 @@
 #
 # Currently empty: every final-link flag we apply is ELF-wide and lives
 # in linux-bin.txt. This file exists as a placeholder for any future
-# aarch64-only leaf-link flag (e.g. tightening BTI / PAC handling beyond
-# what -z force-bti / -z pac-plt already enable in linux-arm64.txt).
+# aarch64-only leaf-link flag (e.g. BTI / PAC linker enforcement once
+# all runtime and assembly inputs satisfy the required properties).

@@ -1,9 +1,6 @@
-# Extra C flags appended to every static-archive translation unit across both
-# netty and netty-tcnative, on EVERY platform and target. One flag per line;
-# blank lines and `#`-comment lines are ignored.
-#
-# Read by scripts/stage-natives.sh and scripts/stage-natives-tcnative.sh,
-# threaded into Makefile.static via the USER_CFLAGS make variable.
+# Shared C/C++ flags for Elide's toolchain and downstream projects,
+# including bundled third-party libraries such as SQLite.
+# One flag per line; blank lines and # comments are ignored.
 #
 # Sibling files in this directory layer on top of base.txt:
 #   linux.txt / darwin.txt                                       — per-OS
@@ -16,7 +13,7 @@
 # Binary  rollup: base → os → os-arch → os-bin → os-arch-bin.
 # See cli/cflags.{sh,ts} for the canonical resolver.
 #
-# Toolchain assumption: clang 22.x on every supported platform (no GCC, no
+# Toolchain assumption: clang 23.1.4 on every supported platform (no GCC, no
 # Apple-clang). Flags here must work on mainline clang for both Linux and
 # macOS. Anything GCC-only or platform-specific belongs in a sibling file.
 
@@ -38,15 +35,6 @@
 # canonical clang spelling.
 -Qunused-arguments
 
-# Gate out netty-jni-util's dladdr branch in JNI_OnLoad. That branch
-# discovers the loaded library's name at runtime by passing a function
-# pointer back through dladdr — which fails on a stripped statically-linked
-# binary (dladdr returns 0) and emits "FATAL: netty_<lib> JNI call to
-# dladdr failed!" at startup. SVM static-JNI builds always know the library
-# name at compile time, so the branch is unnecessary anyway. Threads through
-# USER_CFLAGS into every transport + tcnative static-archive build.
--DNETTY_JNI_UTIL_BUILD_STATIC
-
 # Always generate debug information; the final binary is stripped when needed,
 # and debug symbols are used in later pipeline stages.
 -g
@@ -54,18 +42,14 @@
 # Prefer optimizing at level 3.
 -O3
 
-# Aggressive constant merging: dedupe equal string and numeric constant
-# pool entries across translation units. Smaller binary, fewer
-# relocations to apply at load — a small but free startup win. Mild
-# ISO C/C++ violation: the standard guarantees distinct addresses for
-# distinct string literals, but our code does not depend on that.
--fmerge-all-constants
+# Keep standard object-identity semantics. -fmerge-all-constants is parked
+# in labs.disabled.txt; ordinary string-literal pooling needs no opt-in.
 
-# Position-independent code/executables. PIC is required for objects that
-# may end up in shared libraries; PIE is required for the final executable
-# to participate in ASLR. Including both covers objects destined for either.
+# PIC objects can be reused in shared libraries and PIE executables.
+# Do not append -fPIE: the last option wins and makes definitions local
+# to an executable, which can produce invalid shared-library relocations.
+# Consumers choose -pie / -shared (or -dynamiclib) at their final link.
 -fPIC
--fPIE
 
 # Hardening, unwind, and debuggability flags:
 #   exceptions                  - emit unwind tables for all code so stack unwinding
@@ -120,18 +104,18 @@
 #     Wframe-larger-than=1000000   - warn on any function whose stack frame exceeds 1 MB.
 #                                    clang's analogue of GCC's -Wstack-usage=N (clang
 #                                    rejects -Wstack-usage with "unknown warning option"
-#                                    even on mainline clang 22).
+#                                    even on mainline clang 23).
 #
 #   Stack/control-flow surface:
-#     Wstack-protector             - warn when a canary was requested but couldn't be inserted.
+#     Wstack-protector             - warn about stack-pointer-clobbering inline asm
+#                                    that cannot be protected against stack clash.
 #     Walloca, Wvla                - warn on dynamic stack allocation (alloca + VLAs);
 #                                    both defeat stack-usage analysis and clash protection.
 #
 #   Integer/conversion correctness:
 #     Wshift-overflow              - flag shifts that overflow or shift the sign bit.
-#     Wstrict-overflow             - call out optimizations that assume signed overflow is UB.
-#     (-Wconversion is intentionally NOT enabled: too noisy across Netty's
-#      JNI glue and BoringSSL's x86 intrinsics, drowns the signal we do want.)
+#     Enable -Wconversion per owned target after auditing diagnostics;
+#     bundled third-party code may need a less strict warning policy.
 #
 #   Logic and control flow:
 #     Wimplicit-fallthrough        - require an explicit attribute to fall through a case.
@@ -160,7 +144,6 @@
 -Wshadow
 -Wundef
 -Wstrict-prototypes
--Wstrict-overflow
 -Wswitch-default
 -Wswitch-enum
 -Wframe-larger-than=1000000

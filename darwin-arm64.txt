@@ -9,9 +9,7 @@
 # selection / costs.
 -mcpu=apple-m1
 
-# Pointer Authentication + Branch Target Identification. Apple's userspace
-# ABI already uses pac-ret extensively (every page in the dyld shared
-# cache is signed); enabling `standard` here makes our static-archive
-# code consistent with the surrounding Apple ABI and turns on BTI landing
-# pads that dyld honors when mapping our pages.
+# Emit return-address signing and BTI landing pads. This codegen setting
+# does not select the arm64e ABI or by itself establish dyld/OS enforcement
+# of BTI. Validate runtime behavior for the actual deployment target.
 -mbranch-protection=standard

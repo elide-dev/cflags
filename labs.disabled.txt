@@ -1,99 +1,50 @@
-# Security and hardening flags we have *temporarily* disabled across the
-# live profiles to optimise startup time. This file is NOT loaded by the
-# rollup or by cli/cflags.{sh,ts}; the resolver matches on a closed set
-# of filenames (base / $os / $os-$arch / $os-bin / $os-$arch-bin) and
-# silently ignores everything else.
-#
-# Treat this file as a tracked, reviewable parking lot — every flag
-# here is something we intend to phase back in as our perf budget grows.
-# Re-enabling is a literal cut-and-paste back into the named source
-# file plus a regression run on the BoringSSL TLS-handshake and Netty
-# cold-startup benches.
-#
-# ── from base.txt ────────────────────────────────────────────────────
-#
-# Stack canaries on functions with arrays / address-taken locals.
-# Cost: ~3-5% codesize growth + per-call canary load + epilogue check
-# on every protected function. Re-enable when we have a benchmark
-# harness that catches the cost on the BoringSSL handshake hot path.
+# Optional flags, not loaded by either resolver. Re-enable only after
+# validating the stated contract and measuring toolchain/downstream workloads.
+
+# base.txt: permits merging distinct const objects, changing address identity.
+# Ordinary string pooling does not require this non-standard optimization.
+-fmerge-all-constants
+
+# linux.txt: ABI-incompatible relative vtables. Rebuild the C++ runtime and
+# every dependency exchanging polymorphic objects with the same setting.
+# Compiler version alignment alone is insufficient. Test runtime virtual calls.
+-fexperimental-relative-c++-abi-vtables
+
+# base.txt: stack canaries. Benchmark startup and steady-state overhead;
+# no universal percentage applies. LLVM alignment does not remove this cost.
 -fstack-protector-strong
-#
-# Zero general-purpose registers on function return; shrinks the
-# ROP/JOP gadget surface for spilled callee-saves and reduces secret
-# leakage across call boundaries. Cost: per-return reg-clearing
-# instructions, larger code. Re-enable alongside -fcf-protection=full
-# (below) once we deploy on a CET-capable floor and want defense-in-
-# depth on indirect-call edges.
+
+# base.txt: clear caller-saved GPRs on return. Benchmark code size and return
+# paths; this is independent of CET availability.
 -fzero-call-used-regs=used-gpr
-#
-# ── from linux.txt ───────────────────────────────────────────────────
-#
-# Glibc/musl fortified-source level 2: replaces selected libc calls
-# (str*, mem*, sprintf family, read/write) with __*_chk variants that
-# bounds-check at runtime when the destination size is constant-
-# foldable. Cost: per-call bounds checks on libc hot paths. Re-enable
-# after we have a perf bench that catches the cost on JNI/Netty I/O
-# and on BoringSSL's str/mem-heavy routines.
+
+# linux.txt / darwin.txt: fortified libc wrappers. Validate support in the
+# actual headers: stock musl alone does not supply glibc-style fortification.
+# Evaluate level 3 as well where dynamic object-size checking is supported.
 -U_FORTIFY_SOURCE
 -D_FORTIFY_SOURCE=2
-#
-# libc++ hardened-fast mode: bounds checks on std::vector, std::span,
-# std::string_view, iterator validity. Cost: per-access checks on the
-# libc++ hot paths the BoringSSL test binaries exercise. Re-enable
-# alongside _FORTIFY_SOURCE above.
+
+# linux.txt / darwin.txt: libc++ fast hardening; match the vendored libc++
+# configuration. Does not enable equivalent checks in libstdc++.
 -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST
-#
-# Pass through to the LLVM backend and enable Polly, the polyhedral loop
-# optimizer. Performs high-level transformations (tiling, fusion, skewing,
-# auto-parallelization, improved vectorization) on affine loop nests by
-# modeling them as polyhedra. Requires a Clang built with Polly support;
-# Alpine's `clang22` package (the toolchain we use for production Linux
-# static-archive builds) is compiled WITHOUT Polly and rejects the flag
-# with "Unknown command line argument '-polly'". Re-enable when the
-# Linux toolchain consistently ships a Polly-enabled clang. Gains are
-# concentrated in numeric/array-heavy code; negligible or negative
-# elsewhere.
+
+# linux.txt: Polly is an optional build component. Benchmark affine-loop
+# workloads before enabling; version alignment does not establish a benefit.
 -mllvm
 -polly
-#
-# ── from linux-amd64.txt ─────────────────────────────────────────────
-#
-# Intel CET: Indirect Branch Tracking (IBT) + shadow stack (SHSTK).
-# Cost: ENDBR64 prologue on every indirect-call target, plus shadow-
-# stack push/pop on call/return when the kernel honors it. Re-enable
-# when the linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+
-# and the userspace runtime contract is ready to require CET support.
+
+# linux-amd64.txt: CET instrumentation. Enforcement depends on CPU, kernel,
+# loader and all linked inputs. Benchmark separately from other hardening.
 -fcf-protection=full
-#
-# Skip the dynamic-symbol interposition contract for own-DSO defs and
-# remove the lazy-binding PLT for external calls. Together they let
-# clang resolve intra-DSO calls/constants with PC-relative addressing
-# (-fno-semantic-interposition) and route external calls through a
-# read-only GOT (-fno-plt + -Wl,-z,now). Net effect on Linux: smaller
-# code, faster cold start, no writable PLT-stub gadget surface.
-#
-# Incompatible with our NETTY_JNI_ALIAS pattern: the macro emits the
-# `Java_<class>_<method>` entry symbols as `__attribute__((alias,
-# visibility("default")))`. Under -fno-semantic-interposition the
-# compiler treats them as protected-equivalent and addresses them with
-# `adrp+add` PC-relative, but ld.lld (correctly) sees their declared
-# default visibility and refuses the relocation:
-#   ld.lld: error: relocation R_AARCH64_ADR_PREL_PG_HI21 cannot be used
-#   against symbol 'Java_io_netty_channel_unix_Socket_recvFrom';
-#   recompile with -fPIC
-# Re-enable only if NETTY_JNI_ALIAS moves to STV_PROTECTED (which keeps
-# dlsym discoverability while marking the alias non-interposable) or we
-# stop emitting default-visibility JNI aliases altogether.
+
+# linux.txt: candidates now that the former JNI consumers are gone.
+# Test independently with PIC shared libraries and bundled dependencies.
+# -fno-semantic-interposition changes intra-DSO replacement semantics;
+# -fno-plt changes external call lowering. Audit LD_PRELOAD/interposition
+# requirements and benchmark both startup and steady-state behavior.
 -fno-semantic-interposition
 -fno-plt
-#
-# Per-basic-block sections — prerequisite for a Propeller-style
-# symbol-ordering pass at the consumer's final link, where hot blocks
-# get reordered across function boundaries to shrink the icache
-# working set. Without the ordering file the flag is pure overhead
-# (codesize growth + per-block section relocations), so we keep it
-# disabled until Propeller is actually wired into the linux-amd64
-# pipeline. clang's `=all` form is x86 ELF only — AArch64 clang
-# rejects `all`, darwin clang doesn't implement BB sections — so when
-# re-enabled it belongs in linux-amd64.txt, not linux.txt.
+
+# linux-amd64.txt: use only with a measured profile-driven block layout
+# pipeline. Per-block sections alone can increase size and relocation work.
 -fbasic-block-sections=all

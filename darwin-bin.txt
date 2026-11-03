@@ -9,7 +9,7 @@
 # --gc-sections). Consumes -ffunction-sections / -fdata-sections from
 # base.txt. Safe at the final link only — applying it at intermediate
 # dependency-build links strips symbols that a later stage still
-# references (autoconf conftests, BoringSSL test executables, …).
+# references (configure probes, dependency test executables, …).
 -Wl,-dead_strip
 
 # Drop entries in LC_LOAD_DYLIB whose symbols are never actually

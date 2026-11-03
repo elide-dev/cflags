@@ -8,60 +8,27 @@
 # clang does not enable the codegen on darwin.
 -fstack-clash-protection
 
-# Force LLD as the linker. Required on Alpine + clang22 + ThinLTO: the
-# default linker clang picks up is binutils-ld (Alpine's compiler-rt
-# config), which can't read bitcode .o members from .a archives — autoconf
-# conftests then fail with `member ...(foo.o) in archive is not an object`
-# during the C-compiler-works check. lld handles bitcode natively. Apple's
-# clang on darwin uses Apple's `ld -bitcode_bundle`-aware linker so this
-# flag belongs to Linux only.
+# Use the matching LLVM 23.1.4 linker for ThinLTO bitcode archives.
 -fuse-ld=lld
 
-# Relative C++ ABI vtables — emits a `.rtti_proxy` indirection per RTTI
-# entry that the linker dedupes via COMDAT. ELF supports COMDAT (via
-# section groups) so this works on Linux clang/lld; MachO does not, and
-# clang aborts with `LLVM ERROR: MachO doesn't support COMDATs,
-# '<symbol>.rtti_proxy' cannot be lowered` when the BoringSSL build's
-# C++ test executables (decrepit_test, ssl_test, bssl, …) try to link.
-# Net effect on Linux: smaller vtables + faster startup; net effect on
-# darwin: cmake build aborts. Linux only.
--fexperimental-relative-c++-abi-vtables
+# Relative C++ vtables are parked in labs.disabled.txt. Matching compiler
+# versions alone do not make this experimental ABI compatible with the
+# system C++ runtime or dependencies using conventional vtables.
 
-# NOTE: -fno-semantic-interposition and -fno-plt are parked in
-# labs.disabled.txt — both are incompatible with default-visibility
-# `Java_*` aliases that JNI exports require. The compiler treats own-DSO
-# default-visibility symbols as PC-rel-addressable under
-# -fno-semantic-interposition, and the aarch64 linker (ld.lld) then
-# rejects the resulting `R_AARCH64_ADR_PREL_PG_HI21` relocation against
-# the alias with "cannot be used against symbol 'Java_…'; recompile with
-# -fPIC". Re-enable only if we move JNI exports to STV_PROTECTED (which
-# would need a coordinated change to NETTY_JNI_ALIAS) or stop emitting
-# default-visibility aliases altogether.
-
-# NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
-# -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
-# labs.disabled.txt while we prioritise startup time. They will be
-# re-enabled once we have a perf bench harness that catches the per-
-# call cost of the fortified __*_chk variants and the libc++ iterator/
-# index checks on the str/mem and Netty I/O hot paths. Cut-and-paste
-# the *exact* spellings from labs.disabled.txt back here when
-# re-enabling.
-
-# NOTE: -mllvm -polly is parked in labs.disabled.txt — Alpine's clang22
-# package (the toolchain we use for production Linux static-archive
-# builds) is compiled without the Polly LLVM plugin and rejects the flag
-# with "Unknown command line argument '-polly'". Re-enable here once the
-# Linux toolchain consistently ships a Polly-enabled clang.
+# Candidates in labs.disabled.txt:
+# -fno-semantic-interposition and -fno-plt: benchmark independently for
+# controlled code; verify any symbol interposition / LD_PRELOAD contract.
+# Fortification and libc++ hardening: validate the actual libc headers and
+# runtime configuration, then measure representative workloads.
+# Polly: LLVM version alignment does not imply Polly was built in.
 
 # Mark assembler-produced objects as not requiring an executable stack.
-# Without this, a single .s/.S input lacking a .note.GNU-stack section
-# poisons the linker into emitting PT_GNU_STACK as RWX for the whole binary,
-# silently undoing -Wl,-z,noexecstack.
+# This records input intent; -Wl,-z,noexecstack controls the final output.
 -Wa,--noexecstack
 
 # Linker hardening + size flags. Anything that drops sections from the
 # output (--gc-sections) is intentionally NOT here: dependency builds run
-# intermediate links (autoconf conftests, BoringSSL test executables, …)
+# intermediate links (configure probes, dependency test executables, …)
 # and a too-eager DCE pass at this stage strips symbols that a later
 # build stage still wants. The compiler still emits per-function/data
 # sections via -ffunction-sections / -fdata-sections in base.txt, so the
@@ -71,9 +38,7 @@
 #   relro                  - mark GOT and other ELF sections read-only after relocation.
 #   now                    - disable lazy PLT binding; resolve all symbols at load time.
 #                            Combined with relro this yields full RELRO, hardening the
-#                            GOT against overwrite (and it's required to make -fno-plt
-#                            useful, since there is no longer a lazy resolver to fall
-#                            back to).
+#                            GOT against overwrite after relocation.
 #   noexecstack            - set PT_GNU_STACK to non-executable; blocks shellcode
 #                            execution from the stack.
 #   separate-code          - place executable code in its own pages with no readable
@@ -81,7 +46,7 @@
 #                            gadget exposure.
 #   pack-relative-relocs   - emit DT_RELR-format relative relocations instead of the
 #                            full RELA encoding. Substantially smaller .rela.dyn for
-#                            PIE/PIC binaries on glibc 2.36+ / lld 15+.
+#                            PIE/PIC binaries with glibc 2.36+ or musl 1.2.4+.
 #   --as-needed            - skip DT_NEEDED entries for shared libs whose symbols are
 #                            never actually referenced; trims runtime dep surface.
 #   --icf=safe             - lld identical-code-folding, "safe" variant: only fold
@@ -94,9 +59,9 @@
 #                            for a Bloom-filter prefilter, which sysv-hash isn't).
 #                            Universally supported by every glibc and musl version
 #                            we target.
-#   -O3                    - linker-side string/section optimization. Bumped from
-#                            -O2 — pure link-time cost, smaller output, and the
-#                            smaller binary load is a small startup win.
+#   -O2                    - enable string tail merging and branch-to-branch
+#                            optimization. This is separate from --lto-O3;
+#                            -O3 has no documented additional ELF link tier.
 -Wl,-z,relro
 -Wl,-z,now
 -Wl,-z,noexecstack
@@ -106,4 +71,4 @@
 -Wl,--icf=safe
 -Wl,--build-id=sha1
 -Wl,--hash-style=gnu
--Wl,-O3
+-Wl,-O2

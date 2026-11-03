@@ -1,6 +1,6 @@
 # macOS-only C flags — appended after cflags/base.txt for any build that
 # targets darwin (darwin / darwin-amd64 / darwin-arm64 profiles).
-# Toolchain assumption: mainline LLVM clang 22 (not Apple-clang).
+# Toolchain assumption: mainline LLVM clang 23.1.4 (not Apple-clang).
 
 # NOTE: -U_FORTIFY_SOURCE, -D_FORTIFY_SOURCE=2, and
 # -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST are parked in
@@ -11,7 +11,7 @@
 # from labs.disabled.txt back here when re-enabling.
 
 # Force LLD as the linker. Apple's ld64 / ld-prime is the system default,
-# but mainline clang-22 with ThinLTO produces bitcode archive members that
+# but mainline clang-23.1.4 with ThinLTO produces bitcode archive members that
 # autoconf conftests then fail to recognize unless the linker is bitcode-
 # aware in the same way lld is. ld64.lld accepts Mach-O linker flags
 # below; pass them via -Wl,-foo (single-dash) — these are NOT GNU-style
