@@ -132,3 +132,17 @@ jobs:
           else
             "$CC" $BFLAGS -dynamiclib /tmp/shared.o -o /tmp/libprobe.dylib
           fi
+
+      - name: Verify stack canaries and Linux CPU baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFLAGS=$(bash ./cli/cflags.sh ${{ matrix.target.os }} ${{ matrix.target.arch }})
+          "$CC" $CFLAGS -fno-lto -Werror -S tests/stack.c -o /tmp/stack.s
+          grep -q '__stack_chk_fail' /tmp/stack.s
+          if [ '${{ matrix.target.os }}-${{ matrix.target.arch }}' = linux-amd64 ]; then
+            if echo " $CFLAGS " | grep -Eq ' -m(aes|pclmul|sha|vaes|gfni|rdrnd) '; then
+              echo 'optional ISA extensions raise the x86-64-v3 baseline' >&2
+              exit 1
+            fi
+          fi

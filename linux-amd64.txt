@@ -1,54 +1,11 @@
-# Linux + amd64 only — appended after base.txt and linux.txt.
-
-# Target ISA baseline: x86-64-v3 (Haswell-class). Implies SSE4.2 + AVX +
-# AVX2 + BMI1 + BMI2 + F16C + FMA + LZCNT + MOVBE + POPCNT + OSXSAVE.
-#
-# Layered cryptographic extensions (matched to our Rust profile, which
-# uses -Ctarget-cpu=x86-64-v3 -Ztune-cpu=znver3 -Ctarget-feature=+aes,+rdrand):
-#
-#   -maes      AES-NI: AESENC/AESDEC/AESKEYGEN — a cryptographic hot path
-#              for AES-{CBC,CTR,GCM}. Available on Westmere+/Bulldozer+,
-#              so it's effectively universal at the v3 floor anyway.
-#   -mpclmul   PCLMULQDQ: carry-less multiply, the hot instruction for
-#              GHASH (AES-GCM) and CRC32C polynomial work. Same floor.
-#   -msha      SHA-NI: hardware SHA-1/SHA-256 round instructions. Floor
-#              moves to Goldmont/Cannon Lake+ on Intel and Zen 1+ on AMD;
-#              Skylake/Kaby/Coffee/Comet desktop chips do NOT have it.
-#              We accept that floor for cryptographic workloads.
-#   -mvaes     Vector AES (256/512-bit AES rounds across YMM/ZMM lanes).
-#              Floor: Ice Lake server / Tiger Lake / Alder Lake on Intel,
-#              Zen 3+ on AMD.
-#   -mgfni     Galois Field New Instructions (GF(2^8) affine transforms).
-#              Same floor as VAES on Intel; Zen 4+ on AMD.
-#   -mrdrnd    Hardware RNG via RDRAND. Available since Ivy Bridge / Zen 1.
-#
-# Effective deployment floor with this set: Ice Lake server (2019) /
-# Zen 4 (2022) or newer (GFNI excludes Zen 3). For Zen 3, drop -mgfni;
-# older targets require auditing the entire extension list.
+# Linux x86-64 baseline, shared with elide-dev/toolchain.
+# x86-64-v3 includes AVX2, BMI1/2, FMA and related instructions. Do not add
+# optional crypto/GFNI/RNG extensions here: explicit -m options survive a
+# downstream -march override and silently raise the deployment floor.
+# Crypto libraries retain their own runtime CPU dispatch for faster paths.
 -march=x86-64-v3
--maes
--mpclmul
--msha
--mvaes
--mgfni
--mrdrnd
 
-# Microarch tuning: optimize scheduling/instruction-selection for AMD
-# Zen 3 (Milan / Ryzen 5000). Tuning is purely performance-shaped; the
-# binary still runs on every -march=x86-64-v3 + extensions chip above.
-# Mirrors the Rust profile's -Ztune-cpu=znver3.
+# Scheduling preference only; this does not require Zen 3 instructions.
 -mtune=znver3
 
-# NOTE: -fcf-protection=full (Intel CET / IBT + SHSTK) is parked in
-# labs.disabled.txt while we prioritise startup time. Re-enable when the
-# linux-amd64 deployment floor moves to Tiger Lake+ / Zen 4+ and the
-# userspace runtime contract is ready to require CET support.
-
-# NOTE: -fbasic-block-sections=all is parked in labs.disabled.txt.
-# Per-BB sections only pay off when paired with a Propeller-style
-# symbol-ordering file at the consumer's final link; without that the
-# flag is pure overhead (codesize growth + per-block section relocation
-# noise). Re-enable here once we are sure we ship Propeller in the
-# linux-amd64 pipeline. The flag is x86-ELF-only — AArch64 clang rejects
-# `=all` and darwin clang doesn't implement BB sections — so it stays
-# scoped to linux-amd64 when re-enabled.
+# CET and profile-driven basic-block layout remain opt-in; see labs.disabled.txt.

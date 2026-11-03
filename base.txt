@@ -69,10 +69,11 @@
 #   no-delete-null-pointer-checks - keep explicit null checks even after a prior deref;
 #                                 prevents silent removal of defensive code.
 #
-# NOTE: -fstack-protector-strong and -fzero-call-used-regs=used-gpr are
-# parked in labs.disabled.txt while we prioritise startup time.
+# Strong stack canaries protect functions with local arrays or escaped stack
+# addresses. Keep -fzero-call-used-regs opt-in pending workload measurements.
 # -fstack-clash-protection lives in linux.txt because Apple's clang
 # rejects it on darwin (no codegen support).
+-fstack-protector-strong
 -fexceptions
 -fasynchronous-unwind-tables
 -fno-omit-frame-pointer

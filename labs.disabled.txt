@@ -10,10 +10,6 @@
 # Compiler version alignment alone is insufficient. Test runtime virtual calls.
 -fexperimental-relative-c++-abi-vtables
 
-# base.txt: stack canaries. Benchmark startup and steady-state overhead;
-# no universal percentage applies. LLVM alignment does not remove this cost.
--fstack-protector-strong
-
 # base.txt: clear caller-saved GPRs on return. Benchmark code size and return
 # paths; this is independent of CET availability.
 -fzero-call-used-regs=used-gpr

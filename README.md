@@ -21,7 +21,7 @@ or override per-profile.
 | Linux libc                  | **musl 1.2.4+** primary; **glibc 2.36+** for any glibc consumers          |
 | Linux libc++                | Vendored libc++ (Linux/amd64); `_LIBCPP_HARDENING_MODE` honored          |
 | macOS                       | macOS 12+ (dyld 4 / chained-fixups format)                               |
-| Linux/amd64 ISA             | `x86-64-v3` + `aes`/`pclmul`/`sha`/`vaes`/`gfni`/`rdrand` → Ice Lake / Zen 4+ |
+| Linux/amd64 ISA             | `x86-64-v3` (Haswell / Zen 1+); crypto libraries use runtime dispatch |
 | Darwin/amd64 ISA            | `x86-64-v3` + `aes`/`pclmul`/`rdrand` → Haswell+ (2013); verify CPU support independently of macOS version |
 | Linux/arm64 ISA             | `armv8.2-a` + `crypto`/`crc`/`dotprod` → Graviton 2+, Neoverse N1+, Altra |
 | Darwin/arm64 ISA            | `apple-m1` (ARMv8.5-A) — every shipping Apple Silicon Mac                |
@@ -31,6 +31,10 @@ or override per-profile.
 Keep ThinLTO, `-O3`, unwind information, the current ISA flags, and the
 compile/final-link profile split. The LLVM upgrade alone does not justify
 raising the deployment CPU floor or enabling experimental optimizations.
+
+The shared baseline enables strong stack canaries without disabling optimization.
+Linux x86-64 targets `x86-64-v3` without extra ISA switches; optional crypto/GFNI/RNG
+flags cannot be undone by appending `-march`. Libraries can retain runtime CPU dispatch.
 
 The shared baseline now uses `-fPIC` alone. A trailing `-fPIE` overrides it
 and can make archive members fail to link into shared libraries. Consumers
@@ -48,8 +52,7 @@ ThinLTO optimization are separate settings.
 Next experiments should measure toolchain startup and representative downstream
 workloads (including bundled SQLite): test the parked interposition/PLT flags
 independently after fixing PIC and auditing symbol replacement requirements;
-compare `-O2`/`-O3` and profile-guided optimization; evaluate stack canaries
-and libc++ hardening separately. Polly remains build-dependent. Do not infer
+compare `-O2`/`-O3` and profile-guided optimization; evaluate additional libc++ hardening separately. Polly remains build-dependent. Do not infer
 that a shared LLVM version supplies Polly or makes experimental ABIs safe.
 The current smoke matrix does not validate musl/static PIE, the oldest
 supported CPUs, or downstream application performance.
@@ -67,7 +70,7 @@ Compiler features activated or facilitated by these flags:
 | ----------------------------- | ------------- | ----------------------------------------------------------------- |
 | [Thin LTO][9]                 | All           | Emits and optimizes as LLVM bitcode, program-wide                 |
 | Function/Data Sections        | All           | `-f{data,function}-sections` (collected at *final* link, see below) |
-| Stack Hardening               | Linux         | `-fstack-clash-protection` (canaries are parked, see "Phasing in") |
+| Stack Hardening               | Linux         | `-fstack-protector-strong` on all platforms, plus Linux `-fstack-clash-protection` |
 | Async Unwind Tables           | All           | `-fasynchronous-unwind-tables` for profilers + crash collectors   |
 | [LLD][10] as linker           | All           | `-fuse-ld=lld` required for Thin LTO                              |
 | Full RELRO       | Linux         | `-z relro -z now` for eager binding and read-only relocation tables                     |
@@ -91,7 +94,6 @@ the live profile:
 - `-fno-semantic-interposition` and `-fno-plt` (audit interposition needs and benchmark independently)
 - `-mllvm -polly` (requires a Polly-enabled build and measured benefit)
 - `-fbasic-block-sections=all` (requires a profile-driven layout pipeline)
-- `-fstack-protector-strong`
 - `-fzero-call-used-regs=used-gpr`
 - `-fcf-protection=full`
 - `-U_FORTIFY_SOURCE`
